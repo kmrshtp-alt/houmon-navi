@@ -112,6 +112,61 @@ main { flex: 1; overflow: hidden; display: flex; }
 .lbl-from { background: #dcfce7; color: #16a34a; }
 .lbl-to   { background: #fee2e2; color: #dc2626; }
 
+.search-box {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  position: relative;
+}
+.search-box input {
+  width: 100%;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 7px 10px 7px 30px;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  color: #1e293b;
+  background: #f8fafc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 9px center;
+  transition: border-color 0.15s;
+}
+.search-box input:focus { border-color: #1d4ed8; background-color: white; }
+
+.suggest-list {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 10px; right: 10px;
+  background: white;
+  border: 1.5px solid #1d4ed8;
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  overflow: hidden;
+  display: none;
+}
+.suggest-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background 0.1s;
+}
+.suggest-item:last-child { border-bottom: none; }
+.suggest-item:hover, .suggest-item.active { background: #eff6ff; }
+.suggest-name { font-weight: 700; }
+.suggest-name mark {
+  background: #fef08a;
+  color: #1e293b;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 800;
+}
+.suggest-addr { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggest-hint { padding: 8px 14px; font-size: 11px; color: #94a3b8; text-align: center; }
+
 .p-list { flex: 1; overflow-y: auto; padding: 10px; }
 
 .p-btn {
@@ -370,6 +425,59 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
   font-size: 14px;
   line-height: 1.7;
 }
+
+/* CSV Import */
+.csv-drop {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 28px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.csv-drop:hover, .csv-drop.drag-over {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.csv-drop strong { display: block; font-size: 15px; margin-bottom: 4px; color: #475569; }
+.csv-preview {
+  margin-top: 14px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #15803d;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.import-btn {
+  background: #16a34a;
+  color: white;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.import-btn:hover { background: #15803d; }
+.import-btn:disabled { background: #94a3b8; cursor: default; }
+.csv-note {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 10px;
+  line-height: 1.6;
+}
 </style>
 </head>
 <body>
@@ -400,6 +508,10 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
           1クリック目 → <span class="lbl lbl-from">出発</span>&nbsp;
           2クリック目 → <span class="lbl lbl-to">到着</span>
         </div>
+      </div>
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="名前を入力..." autocomplete="off">
+        <div class="suggest-list" id="suggest-list"></div>
       </div>
       <div class="p-list" id="patient-grid"></div>
     </div>
@@ -435,6 +547,25 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
   <!-- 患者管理 -->
   <div id="manage-screen">
     <div class="manage-inner">
+
+      <div class="card">
+        <div class="card-header">CSVで一括インポート</div>
+        <div class="card-body">
+          <div class="csv-drop" id="csv-drop" onclick="document.getElementById('csv-file').click()">
+            <strong>CSVファイルをここにドラッグ＆ドロップ</strong>
+            またはクリックしてファイルを選択
+          </div>
+          <input type="file" id="csv-file" accept=".csv" style="display:none">
+          <div class="csv-preview" id="csv-preview">
+            <span id="csv-preview-text"></span>
+            <button class="import-btn" id="import-btn" onclick="importCSV()">インポート実行</button>
+          </div>
+          <div class="csv-note">
+            モバカルのエクスポートCSVをそのまま使えます（名前・フリガナ・郵便番号・住所の列があればOK）<br>
+            ExcelでCSV保存する際は「CSV UTF-8」形式を選んでください
+          </div>
+        </div>
+      </div>
 
       <div class="card">
         <div class="card-header">患者を追加</div>
@@ -549,12 +680,18 @@ function showTab(tab) {
 
 function renderGrid() {
   const grid = document.getElementById('patient-grid');
+  const filtered = getFilteredPatients();
   if (patients.length === 0) {
     grid.innerHTML = '<div class="empty-msg">患者が登録されていません<br>「患者管理」タブから追加してください</div>';
     return;
   }
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-msg">該当する患者が見つかりません</div>';
+    return;
+  }
   grid.innerHTML = '';
-  patients.forEach((p, i) => {
+  filtered.forEach(p => {
+    const i = patients.indexOf(p);
     const btn = document.createElement('button');
     btn.className = 'p-btn' + (i === fromIdx ? ' from-sel' : i === toIdx ? ' to-sel' : '');
     const badge = i === fromIdx ? '<span class="p-badge">出発</span>'
@@ -629,6 +766,202 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/* ── 検索・オートコンプリート ── */
+let suggestIndex = -1;
+
+function getFilteredPatients() {
+  const q = (document.getElementById('search-input')?.value || '').trim();
+  if (!q) return patients;
+  return patients.filter(p => matchesQuery(p, q));
+}
+
+function setupSearch() {
+  const input = document.getElementById('search-input');
+  const list  = document.getElementById('suggest-list');
+
+  input.addEventListener('input', () => {
+    suggestIndex = -1;
+    renderSuggest();
+    renderGrid();
+  });
+
+  input.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('.suggest-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      suggestIndex = Math.min(suggestIndex + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('active', i === suggestIndex));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      suggestIndex = Math.max(suggestIndex - 1, 0);
+      items.forEach((el, i) => el.classList.toggle('active', i === suggestIndex));
+    } else if (e.key === 'Enter' && suggestIndex >= 0) {
+      e.preventDefault();
+      items[suggestIndex]?.click();
+    } else if (e.key === 'Escape') {
+      closeSuggest();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-box')) closeSuggest();
+  });
+}
+
+function toHira(str) {
+  return (str || '').replace(/[ァ-ヶ]/g, c =>
+    String.fromCharCode(c.charCodeAt(0) - 0x60)
+  );
+}
+
+function matchesQuery(p, q) {
+  const hq = toHira(q);
+  return p.name.includes(q) ||
+         toHira(p.furigana || '').includes(hq) ||
+         (p.furigana || '').includes(q);
+}
+
+function renderSuggest() {
+  const q    = document.getElementById('search-input').value.trim();
+  const list = document.getElementById('suggest-list');
+
+  if (!q) { closeSuggest(); return; }
+
+  const hits = patients.filter(p => matchesQuery(p, q)).slice(0, 6);
+  if (hits.length === 0) { closeSuggest(); return; }
+
+  list.innerHTML = hits.map(p => {
+    const hiName = esc(p.name).replace(esc(q), `<mark>${esc(q)}</mark>`);
+    const hira   = toHira(p.furigana || '');
+    const hiraQ  = toHira(q);
+    const hiFuri = hira
+      ? esc(hira).replace(esc(hiraQ), `<mark>${esc(hiraQ)}</mark>`)
+      : '';
+    return `<div class="suggest-item" data-idx="${patients.indexOf(p)}">
+      <span class="suggest-name">${hiName}${hiFuri ? ` <small style="font-weight:400;color:#94a3b8">（${hiFuri}）</small>` : ''}</span>
+      <span class="suggest-addr">${esc(p.address)}</span>
+    </div>`;
+  }).join('') + `<div class="suggest-hint">${hits.length}件 — クリックで選択</div>`;
+
+  list.querySelectorAll('.suggest-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const i = parseInt(el.dataset.idx);
+      select(i);
+      document.getElementById('search-input').value = '';
+      closeSuggest();
+      renderGrid();
+    });
+  });
+
+  list.style.display = 'block';
+}
+
+function closeSuggest() {
+  document.getElementById('suggest-list').style.display = 'none';
+  suggestIndex = -1;
+}
+
+/* ── CSV インポート ── */
+let csvRows = [];
+
+function setupCSV() {
+  const fileInput = document.getElementById('csv-file');
+  const drop = document.getElementById('csv-drop');
+
+  fileInput.addEventListener('change', e => parseCSVFile(e.target.files[0]));
+
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag-over');
+    parseCSVFile(e.dataTransfer.files[0]);
+  });
+}
+
+function parseCSVFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) { alert('データが見つかりません'); return; }
+
+    const cols = splitCSVLine(lines[0]).map(c => c.trim());
+
+    // 名前列を探す（日本語・英語どちらにも対応）
+    const NAME_KEYS  = ['名前','氏名','患者名','お名前','name'];
+    const ADDR_KEYS  = ['住所','address','所在地'];
+    const FURI_KEYS  = ['フリガナ','ふりがな','読み','かな','furigana'];
+
+    const ni = cols.findIndex(c => NAME_KEYS.some(k => c.includes(k)));
+    const ai = cols.findIndex(c => ADDR_KEYS.some(k => c.includes(k)));
+    const fi = cols.findIndex(c => FURI_KEYS.some(k => c.includes(k)));
+
+    if (ni === -1) { alert(`名前の列が見つかりません。\n検出された列：${cols.join('、')}\n\n「名前」「氏名」「患者名」のいずれかを列名にしてください。`); return; }
+    if (ai === -1) { alert(`住所の列が見つかりません。\n検出された列：${cols.join('、')}\n\n「住所」という列名にしてください。`); return; }
+
+    csvRows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cells = splitCSVLine(lines[i]);
+      const name     = (cells[ni] || '').trim();
+      const address  = (cells[ai] || '').trim();
+      const furigana = fi >= 0 ? (cells[fi] || '').trim() : '';
+      if (name && address) csvRows.push({ name, address, furigana });
+    }
+
+    if (csvRows.length === 0) { alert('有効なデータが見つかりませんでした'); return; }
+
+    const furiMsg = fi >= 0 ? `・フリガナ「${cols[fi]}」列も取得` : '（フリガナ列なし）';
+    document.getElementById('csv-preview-text').textContent =
+      `${csvRows.length}件を検出 ${furiMsg}`;
+    document.getElementById('csv-preview').style.display = 'flex';
+  };
+  // まずUTF-8で読む。文字化けする場合はShift-JISで再読み込み
+  reader.readAsText(file, 'UTF-8');
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur);
+  return result;
+}
+
+async function importCSV() {
+  if (csvRows.length === 0) return;
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  btn.textContent = 'インポート中...';
+
+  const CHUNK = 50;
+  let done = 0;
+  for (let i = 0; i < csvRows.length; i += CHUNK) {
+    const chunk = csvRows.slice(i, i + CHUNK);
+    const { error } = await db.from('patients').insert(chunk);
+    if (error) {
+      alert(`インポート中にエラーが発生しました（${done}件処理済み）\n${error.message}`);
+      break;
+    }
+    done += chunk.length;
+    btn.textContent = `${done}/${csvRows.length}件...`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'インポート実行';
+  document.getElementById('csv-preview').style.display = 'none';
+  document.getElementById('csv-file').value = '';
+  csvRows = [];
+  alert(`${done}件のインポートが完了しました。`);
+  await load();
+}
+
 /* ── Enterキーで次へ / 追加 ── */
 document.getElementById('new-name').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('new-addr').focus();
@@ -638,6 +971,8 @@ document.getElementById('new-addr').addEventListener('keydown', e => {
 });
 
 /* ── 起動 ── */
+setupSearch();
+setupCSV();
 load();
 </script>
 </body>
