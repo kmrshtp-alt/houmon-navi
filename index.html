@@ -1184,13 +1184,20 @@ function setupTodayAutocomplete() {
       return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></div>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
+      el.addEventListener('touchend', e => {
+        e.preventDefault();
+        const p = patients.find(x => x.id === el.dataset.id);
+        if (p) addToToday(p);
+        input.value = '';
+        sug.style.display = 'none';
+        input.focus();
+      });
       el.addEventListener('mousedown', e => {
         e.preventDefault();
         const p = patients.find(x => x.id === el.dataset.id);
         if (p) addToToday(p);
         input.value = '';
         sug.style.display = 'none';
-        setTimeout(() => input.focus(), 50);
       });
     });
     sug.style.display = 'block';
