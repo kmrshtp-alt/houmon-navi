@@ -1120,16 +1120,38 @@ function toHalfWidth(s) {
           .replace(/[－−]/g, '-');
 }
 
-async function geocode(p) {
-  if (p.lat && p.lng) return { lat: p.lat, lng: p.lng };
-  await new Promise(r => setTimeout(r, 1100));
-  const addr = toHalfWidth(p.address);
+async function nominatimSearch(addr) {
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1&countrycodes=jp`;
   const res = await fetch(url, { headers: { 'Accept-Language': 'ja', 'User-Agent': 'houmon-navi/1.0' } });
   const data = await res.json();
-  if (!data.length) throw new Error(`住所が見つかりません: ${p.name}`);
-  const lat = parseFloat(data[0].lat);
-  const lng = parseFloat(data[0].lon);
+  return data.length ? data[0] : null;
+}
+
+async function geocode(p) {
+  if (p.lat && p.lng) return { lat: p.lat, lng: p.lng };
+  await new Promise(r => setTimeout(r, 1100));
+  const base = toHalfWidth(p.address);
+
+  // 住所を段階的に短くして検索（部屋番号→号→番地の順に省略）
+  const candidates = [base];
+  let tmp = base;
+  for (let i = 0; i < 2; i++) {
+    const shorter = tmp.replace(/-[^-\s]+$/, '');
+    if (shorter === tmp) break;
+    candidates.push(shorter);
+    tmp = shorter;
+  }
+
+  let result = null;
+  for (const addr of candidates) {
+    result = await nominatimSearch(addr);
+    if (result) break;
+    if (addr !== candidates[candidates.length - 1]) await new Promise(r => setTimeout(r, 600));
+  }
+
+  if (!result) throw new Error(`住所が見つかりません: ${p.name}（${base}）`);
+  const lat = parseFloat(result.lat);
+  const lng = parseFloat(result.lon);
   if (p.id && p.id !== '__clinic__') {
     await db.from('patients').update({ lat, lng }).eq('id', p.id);
     const idx = patients.findIndex(x => x.id === p.id);
