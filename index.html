@@ -396,17 +396,6 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
 }
 .today-search-box h3 { font-size: 13px; font-weight: 700; color: #64748b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
 
-.today-clinic-row {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-}
-.today-clinic-toggle {
-  display: flex; align-items: center; gap: 8px; cursor: pointer;
-  background: #edf2fa; border: 1.5px solid #a8c4e5; border-radius: 8px;
-  padding: 8px 14px; font-size: 13px; font-weight: 700; color: #1e3d6e;
-  transition: all 0.15s;
-}
-.today-clinic-toggle:hover { background: #c8dff5; }
-.today-clinic-toggle.active { background: #1e3d6e; color: white; border-color: #1e3d6e; }
 
 .today-input-wrap { position: relative; }
 .today-input {
@@ -584,11 +573,6 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
 
       <div class="today-search-box">
         <h3>訪問患者を追加（順番に）</h3>
-        <div class="today-clinic-row">
-          <button class="today-clinic-toggle" id="clinic-toggle" onclick="toggleClinicStart()">
-            🏥 ここはるから開始
-          </button>
-        </div>
         <div class="today-input-wrap">
           <input class="today-input" id="today-input" type="text" placeholder="患者名を入力して追加..." autocomplete="off">
           <div class="today-suggest suggest-list" id="today-suggest"></div>
@@ -1019,11 +1003,6 @@ const CLINIC_ENTRY = {
   lat: null, lng: null
 };
 
-function toggleClinicStart() {
-  clinicStart = !clinicStart;
-  document.getElementById('clinic-toggle').classList.toggle('active', clinicStart);
-  renderTodayList();
-}
 
 function setupTodayAutocomplete() {
   const input = document.getElementById('today-input');
@@ -1224,7 +1203,6 @@ setupAutocomplete('from');
 setupAutocomplete('to');
 setupTodayAutocomplete();
 setupCSV();
-document.getElementById('clinic-toggle').classList.add('active');
 if (sessionStorage.getItem('auth') === '1') load();
 </script>
 </body>
