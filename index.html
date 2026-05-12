@@ -209,9 +209,12 @@ main { flex: 1; overflow: hidden; display: flex; }
   background: none; border: none; border-bottom: 1px solid #f1f5f9;
   padding: 11px 16px; cursor: pointer;
   transition: background 0.1s; font-family: inherit;
+  user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .suggest-item:last-child { border-bottom: none; }
 .suggest-item:hover, .suggest-item.active { background: #edf2fa; }
+.suggest-item > * { pointer-events: none; }
 .s-name { font-size: 15px; font-weight: 700; color: #1e293b; }
 .s-name mark { background: #fef08a; color: #1e293b; border-radius: 2px; padding: 0 1px; }
 .s-furi { font-size: 11px; color: #94a3b8; margin-top: 1px; }
@@ -1181,33 +1184,35 @@ function setupTodayAutocomplete() {
     if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
-      return `<button type="button" class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></button>`;
+      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></div>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('touchstart', e => {
-        e.preventDefault(); // iOS: input が UIKit first responder を手放さないようにする
+        e.preventDefault(); // iOS: タップで input が first responder を失わないように既定動作を抑止
         selecting = true;
       }, { passive: false });
-      el.addEventListener('touchend', () => {
+      el.addEventListener('touchend', e => {
+        e.preventDefault(); // synthetic mouse/click を発火させない
         const p = patients.find(x => x.id === el.dataset.id);
+        // DOM mutation の前にユーザージェスチャー内で focus を確立
+        input.focus();
         if (p) addToToday(p);
         input.value = '';
         sug.style.display = 'none';
         selecting = false;
-        input.focus();
       });
       el.addEventListener('mousedown', e => {
         e.preventDefault(); // デスクトップ: blur を防ぐ
         selecting = true;
       });
       el.addEventListener('click', () => {
-        // デスクトップのみ到達（touch 端末は touchstart.preventDefault で click が発火しない）
+        // デスクトップのみ到達
         const p = patients.find(x => x.id === el.dataset.id);
+        input.focus();
         if (p) addToToday(p);
         input.value = '';
         sug.style.display = 'none';
         selecting = false;
-        input.focus();
       });
     });
     sug.style.display = 'block';
