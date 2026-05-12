@@ -1184,15 +1184,30 @@ function setupTodayAutocomplete() {
       return `<button type="button" class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></button>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
-      el.addEventListener('touchstart', () => { selecting = true; }, { passive: true });
-      el.addEventListener('mousedown',  () => { selecting = true; });
-      el.addEventListener('click', () => {
+      el.addEventListener('touchstart', e => {
+        e.preventDefault(); // iOS: input が UIKit first responder を手放さないようにする
+        selecting = true;
+      }, { passive: false });
+      el.addEventListener('touchend', () => {
         const p = patients.find(x => x.id === el.dataset.id);
+        if (p) addToToday(p);
         input.value = '';
-        input.focus();
-        selecting = false;
         sug.style.display = 'none';
-        if (p) setTimeout(() => addToToday(p), 0);
+        selecting = false;
+        input.focus();
+      });
+      el.addEventListener('mousedown', e => {
+        e.preventDefault(); // デスクトップ: blur を防ぐ
+        selecting = true;
+      });
+      el.addEventListener('click', () => {
+        // デスクトップのみ到達（touch 端末は touchstart.preventDefault で click が発火しない）
+        const p = patients.find(x => x.id === el.dataset.id);
+        if (p) addToToday(p);
+        input.value = '';
+        sug.style.display = 'none';
+        selecting = false;
+        input.focus();
       });
     });
     sug.style.display = 'block';
