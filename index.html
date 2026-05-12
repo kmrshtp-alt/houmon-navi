@@ -1188,11 +1188,11 @@ function setupTodayAutocomplete() {
       el.addEventListener('mousedown',  () => { selecting = true; });
       el.addEventListener('click', () => {
         const p = patients.find(x => x.id === el.dataset.id);
-        if (p) addToToday(p);
         input.value = '';
-        sug.style.display = 'none';
-        selecting = false;
         input.focus();
+        selecting = false;
+        sug.style.display = 'none';
+        if (p) setTimeout(() => addToToday(p), 0);
       });
     });
     sug.style.display = 'block';
