@@ -439,6 +439,14 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
 }
 .visit-del:hover { color: #c53030; }
 
+.clinic-insert-btn {
+  margin-top: 10px; width: 100%;
+  background: #e8f4ee; border: 1.5px solid #7cbd9c; border-radius: 8px;
+  padding: 9px 14px; font-size: 13px; font-weight: 700; color: #1a6b40;
+  cursor: pointer; font-family: inherit; transition: all 0.15s; text-align: left;
+}
+.clinic-insert-btn:hover { background: #d4ecde; border-color: #1a6b40; }
+
 .drag-handle {
   color: #cbd5e1; cursor: grab; font-size: 18px; padding: 2px 4px;
   user-select: none; flex-shrink: 0; line-height: 1;
@@ -577,6 +585,7 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
           <input class="today-input" id="today-input" type="text" placeholder="患者名を入力して追加..." autocomplete="off">
           <div class="today-suggest suggest-list" id="today-suggest"></div>
         </div>
+        <button class="clinic-insert-btn" onclick="addClinicReturn()">🏥 ここはるに戻る（昼休憩など）</button>
       </div>
 
       <div class="visit-list-card" id="visit-list-card" style="display:none">
@@ -584,9 +593,7 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
         <div id="visit-list"></div>
       </div>
 
-      <button class="calc-btn" id="calc-btn" onclick="calculateTimes()" disabled>移動時間を計算</button>
-
-      <div id="result-area"></div>
+      <button class="calc-btn" id="calc-btn" onclick="openFullRoute()" disabled>🗺️ Google Maps で全行程を開く</button>
 
     </div>
   </div>
@@ -1048,6 +1055,11 @@ function addToToday(p) {
   renderTodayList();
 }
 
+function addClinicReturn() {
+  todayList.push({ ...CLINIC_ENTRY });
+  renderTodayList();
+}
+
 function removeFromToday(i) {
   todayList.splice(i, 1);
   renderTodayList();
@@ -1064,23 +1076,23 @@ function renderTodayList() {
   btn.disabled = fullList.length < 2;
 
   list.innerHTML = fullList.map((p, i) => {
-    const isClinic = p.id === '__clinic__';
+    const isFixed = i === 0 && clinicStart;
     const tidx = i - (clinicStart ? 1 : 0);
+    const isClinicColor = p.id === '__clinic__';
     return `
-    <div class="visit-item${isClinic ? '' : ' draggable'}"
-         ${isClinic ? '' : `draggable="true" data-tidx="${tidx}"`}>
-      ${isClinic ? '<div class="drag-placeholder"></div>' : '<div class="drag-handle" title="ドラッグで並び替え">⠿</div>'}
-      <div class="visit-num ${isClinic ? 'clinic' : ''}">${i + 1}</div>
+    <div class="visit-item${isFixed ? '' : ' draggable'}"
+         ${isFixed ? '' : `draggable="true" data-tidx="${tidx}"`}>
+      ${isFixed ? '<div class="drag-placeholder"></div>' : '<div class="drag-handle" title="ドラッグで並び替え">⠿</div>'}
+      <div class="visit-num ${isClinicColor ? 'clinic' : ''}">${i + 1}</div>
       <div class="visit-info">
         <div class="visit-name">${esc(p.name)}</div>
         <div class="visit-addr">${esc(p.address)}</div>
       </div>
-      ${isClinic ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
+      ${isFixed ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
     </div>`;
   }).join('');
 
   setupDragReorder();
-  document.getElementById('result-area').innerHTML = '';
 }
 
 let dragSrcIdx = null;
@@ -1114,150 +1126,16 @@ function setupDragReorder() {
   });
 }
 
-/* ── ジオコーディング & ルート計算 ── */
-function toHalfWidth(s) {
-  return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
-          .replace(/[－−]/g, '-');
-}
-
-async function gsiSearch(addr) {
-  try {
-    const res = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(addr)}`);
-    const data = await res.json();
-    if (!data.length) return null;
-    const [lng, lat] = data[0].geometry.coordinates;
-    return { lat, lng };
-  } catch { return null; }
-}
-
-async function nominatimSearch(addr) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1&countrycodes=jp`,
-      { headers: { 'Accept-Language': 'ja', 'User-Agent': 'houmon-navi/1.0' } }
-    );
-    const data = await res.json();
-    if (!data.length) return null;
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-  } catch { return null; }
-}
-
-function addressCandidates(addr) {
-  const result = [addr];
-  let tmp = addr;
-  for (let i = 0; i < 3; i++) {
-    const shorter = tmp.replace(/-[^-\s]+$/, '');
-    if (shorter === tmp) break;
-    if (!result.includes(shorter)) result.push(shorter);
-    tmp = shorter;
-  }
-  // 丁目より後の番地・号を除いたバージョンも試す
-  const chomeOnly = addr.replace(/(\d+丁目)\d[\d\-]*/, '$1');
-  if (chomeOnly !== addr && !result.includes(chomeOnly)) result.push(chomeOnly);
-  return result;
-}
-
-async function geocode(p) {
-  if (p.lat && p.lng) return { lat: p.lat, lng: p.lng };
-  const base = toHalfWidth(p.address);
-  const candidates = addressCandidates(base);
-
-  // まず国土地理院APIで試す（日本住所に強い）
-  for (const addr of candidates) {
-    const found = await gsiSearch(addr);
-    if (found) {
-      if (p.id && p.id !== '__clinic__') {
-        await db.from('patients').update({ lat: found.lat, lng: found.lng }).eq('id', p.id);
-        const idx = patients.findIndex(x => x.id === p.id);
-        if (idx >= 0) { patients[idx].lat = found.lat; patients[idx].lng = found.lng; }
-      }
-      return found;
-    }
-    await new Promise(r => setTimeout(r, 300));
-  }
-
-  // フォールバック: Nominatim
-  await new Promise(r => setTimeout(r, 800));
-  for (const addr of candidates) {
-    const found = await nominatimSearch(addr);
-    if (found) {
-      if (p.id && p.id !== '__clinic__') {
-        await db.from('patients').update({ lat: found.lat, lng: found.lng }).eq('id', p.id);
-        const idx = patients.findIndex(x => x.id === p.id);
-        if (idx >= 0) { patients[idx].lat = found.lat; patients[idx].lng = found.lng; }
-      }
-      return found;
-    }
-    await new Promise(r => setTimeout(r, 800));
-  }
-
-  throw new Error(`住所が見つかりません: ${p.name}（${base}）`);
-}
-
-async function getRoute(from, to) {
-  const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
-  const res  = await fetch(url);
-  const data = await res.json();
-  if (data.code !== 'Ok') throw new Error('ルートが取得できませんでした');
-  return {
-    minutes: Math.round(data.routes[0].duration / 60),
-    km: Math.round(data.routes[0].distance / 100) / 10
-  };
-}
-
-async function calculateTimes() {
-  const btn = document.getElementById('calc-btn');
-  const area = document.getElementById('result-area');
+/* ── 全行程 Google Maps ── */
+function openFullRoute() {
   const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
-
-  btn.disabled = true; btn.textContent = '計算中...';
-  area.innerHTML = '<div class="result-card"><div class="calculating">住所を確認中...</div></div>';
-
-  try {
-    const coords = [];
-    for (let i = 0; i < fullList.length; i++) {
-      btn.textContent = `ジオコーディング中 ${i+1}/${fullList.length}...`;
-      const c = await geocode(fullList[i]);
-      coords.push(c);
-    }
-
-    btn.textContent = '移動時間を計算中...';
-    const legs = [];
-    for (let i = 0; i < fullList.length - 1; i++) {
-      const r = await getRoute(coords[i], coords[i+1]);
-      legs.push(r);
-    }
-
-    const totalMin = legs.reduce((s, l) => s + l.minutes, 0);
-    const hours    = Math.floor(totalMin / 60);
-    const mins     = totalMin % 60;
-    const totalStr = hours > 0 ? `${hours}時間${mins}分` : `${mins}分`;
-
-    area.innerHTML = `<div class="result-card">
-      <h3>移動時間の目安</h3>
-      ${fullList.map((p, i) => `
-        <div class="result-row">
-          <div class="result-stop">
-            <div class="result-stop-name">${esc(p.name)}</div>
-            <div class="result-stop-addr">${esc(p.address)}</div>
-          </div>
-        </div>
-        ${i < legs.length ? `
-        <div style="display:flex;align-items:center;gap:10px;padding:4px 0 4px 10px">
-          <div style="width:2px;height:28px;background:#e2e8f0;margin-left:10px;flex-shrink:0"></div>
-          <div class="result-time">約${legs[i].minutes}分（${legs[i].km}km）</div>
-        </div>` : ''}
-      `).join('')}
-      <div class="result-total">
-        <span>合計移動時間</span>
-        <strong>${totalStr}</strong>
-      </div>
-    </div>`;
-  } catch(e) {
-    area.innerHTML = `<div class="result-card"><div class="result-error">⚠️ ${e.message}</div></div>`;
-  }
-
-  btn.disabled = false; btn.textContent = '移動時間を計算';
+  if (fullList.length < 2) return;
+  const origin      = encodeURIComponent(fullList[0].address);
+  const destination = encodeURIComponent(fullList[fullList.length - 1].address);
+  const waypoints   = fullList.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  if (waypoints) url += `&waypoints=${waypoints}`;
+  window.open(url, '_blank');
 }
 
 /* ── 起動 ── */
