@@ -873,7 +873,9 @@ function renderList() {
     list.innerHTML = '<div class="empty-msg">まだ患者が登録されていません</div>';
     return;
   }
-  list.innerHTML = patients.map(p => `
+  const sorted = [...patients].sort((a, b) =>
+    (a.furigana || a.name).localeCompare(b.furigana || b.name, 'ja'));
+  list.innerHTML = sorted.map(p => `
     <div class="tbl-row">
       <div class="tbl-name">${esc(p.name)}<div style="font-size:11px;color:#94a3b8">${esc(p.furigana||'')}</div></div>
       <div class="tbl-addr">${esc(p.address)}</div>
