@@ -1171,6 +1171,7 @@ function setupTodayAutocomplete() {
   const input = document.getElementById('today-input');
   const sug   = document.getElementById('today-suggest');
   let idx = -1;
+  let selecting = false;
 
   input.addEventListener('input', () => {
     idx = -1;
@@ -1179,25 +1180,19 @@ function setupTodayAutocomplete() {
     const hits = patients.filter(p => matchQ(p, q)).slice(0, 8);
     if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
     sug.innerHTML = hits.map(p => {
-      const hq = toHira(q);
       const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
       return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></div>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
-      el.addEventListener('touchend', e => {
-        e.preventDefault();
+      el.addEventListener('touchstart', () => { selecting = true; }, { passive: true });
+      el.addEventListener('mousedown', e => { e.preventDefault(); }); // PCでblurを防ぐ
+      el.addEventListener('click', () => {
         const p = patients.find(x => x.id === el.dataset.id);
         if (p) addToToday(p);
         input.value = '';
         sug.style.display = 'none';
+        selecting = false;
         input.focus();
-      });
-      el.addEventListener('mousedown', e => {
-        e.preventDefault();
-        const p = patients.find(x => x.id === el.dataset.id);
-        if (p) addToToday(p);
-        input.value = '';
-        sug.style.display = 'none';
       });
     });
     sug.style.display = 'block';
@@ -1207,11 +1202,13 @@ function setupTodayAutocomplete() {
     const items = sug.querySelectorAll('.suggest-item');
     if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx+1, items.length-1); items.forEach((el,i) => el.classList.toggle('active', i===idx)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx-1, 0); items.forEach((el,i) => el.classList.toggle('active', i===idx)); }
-    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx]?.dispatchEvent(new MouseEvent('mousedown')); }
+    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx]?.dispatchEvent(new Event('click')); }
     else if (e.key === 'Escape') sug.style.display = 'none';
   });
 
-  input.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
+  input.addEventListener('blur', () => {
+    setTimeout(() => { if (!selecting) sug.style.display = 'none'; }, 300);
+  });
 }
 
 function addToToday(p) {
