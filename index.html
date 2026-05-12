@@ -564,13 +564,6 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
         🗺️ Google マップで案内
       </button>
 
-      <div class="toll-toggle" id="toll-toggle" onclick="toggleToll()">
-        <div class="toggle-track"></div>
-        <div class="toll-label">
-          有料道路を使わない
-          <small>ONにすると高速・有料道路を回避します</small>
-        </div>
-      </div>
 
     </div>
   </div>
@@ -827,8 +820,7 @@ function openMaps() {
   if (!fromPatient || !toPatient) return;
   const o = encodeURIComponent(fromPatient.address);
   const d = encodeURIComponent(toPatient.address);
-  const avoid = avoidTolls ? '&avoid=tolls' : '';
-  window.open(`https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&travelmode=driving${avoid}`, '_blank');
+  window.open(`https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&travelmode=driving`, '_blank');
 }
 
 /* ── 患者一覧描画 ── */
@@ -953,13 +945,6 @@ function setClinic() {
   updateNavBtn();
 }
 
-/* ── 有料道路トグル ── */
-let avoidTolls = false;
-
-function toggleToll() {
-  avoidTolls = !avoidTolls;
-  document.getElementById('toll-toggle').classList.toggle('on', avoidTolls);
-}
 
 /* ── ユーティリティ ── */
 function esc(s) {
