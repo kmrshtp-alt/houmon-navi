@@ -883,7 +883,12 @@ function parseCSVFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const text = e.target.result;
+    const buf = e.target.result;
+    // UTF-8で試して文字化けしていたらShift-JISで再デコード
+    let text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+    if ((text.match(/�/g) || []).length > 3) {
+      try { text = new TextDecoder('shift-jis').decode(buf); } catch(e) {}
+    }
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) { alert('データが見つかりません'); return; }
 
@@ -917,8 +922,7 @@ function parseCSVFile(file) {
       `${csvRows.length}件を検出 ${furiMsg}`;
     document.getElementById('csv-preview').style.display = 'flex';
   };
-  // まずUTF-8で読む。文字化けする場合はShift-JISで再読み込み
-  reader.readAsText(file, 'UTF-8');
+  reader.readAsArrayBuffer(file);
 }
 
 function splitCSVLine(line) {
