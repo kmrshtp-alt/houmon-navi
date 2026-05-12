@@ -11,7 +11,7 @@
 /* ── ログイン画面 ── */
 #login-screen {
   position: fixed; inset: 0;
-  background: #1d4ed8;
+  background: #1e3d6e;
   display: flex; align-items: center; justify-content: center;
   z-index: 9999;
 }
@@ -38,11 +38,11 @@
   margin-bottom: 14px;
   transition: border-color 0.15s;
 }
-.login-input:focus { border-color: #1d4ed8; }
-.login-input.error { border-color: #ef4444; animation: shake 0.3s; }
+.login-input:focus { border-color: #1e3d6e; }
+.login-input.error { border-color: #c53030; animation: shake 0.3s; }
 .login-btn {
   width: 100%;
-  background: #1d4ed8;
+  background: #1e3d6e;
   color: white;
   border: none;
   border-radius: 10px;
@@ -53,8 +53,8 @@
   font-family: inherit;
   transition: background 0.15s;
 }
-.login-btn:hover { background: #1e40af; }
-.login-error { font-size: 12px; color: #ef4444; margin-top: 10px; min-height: 18px; }
+.login-btn:hover { background: #172f55; }
+.login-error { font-size: 12px; color: #c53030; margin-top: 10px; min-height: 18px; }
 @keyframes shake {
   0%,100% { transform: translateX(0); }
   25%      { transform: translateX(-6px); }
@@ -72,7 +72,7 @@ body {
 
 /* ── Header ── */
 header {
-  background: #1d4ed8;
+  background: #1e3d6e;
   color: white;
   padding: 0 24px;
   height: 54px;
@@ -136,8 +136,8 @@ main { flex: 1; overflow: hidden; display: flex; }
   text-transform: uppercase;
   margin-bottom: 8px;
 }
-.rlabel.from { color: #16a34a; }
-.rlabel.to   { color: #ea580c; }
+.rlabel.from { color: #1a6b40; }
+.rlabel.to   { color: #92400e; }
 
 /* Autocomplete input */
 .route-input-wrap { position: relative; }
@@ -156,9 +156,9 @@ main { flex: 1; overflow: hidden; display: flex; }
   transition: border-color 0.15s, background 0.15s;
 }
 .route-input::placeholder { color: #cbd5e1; font-weight: 400; font-size: 16px; }
-.route-input:focus { border-color: #1d4ed8; background: white; }
-.route-input.selected-from { border-color: #16a34a; background: #f0fdf4; }
-.route-input.selected-to   { border-color: #ea580c; background: #fff7ed; }
+.route-input:focus { border-color: #1e3d6e; background: white; }
+.route-input.selected-from { border-color: #1a6b40; background: #e8f4ee; }
+.route-input.selected-to   { border-color: #92400e; background: #fdf3e4; }
 
 .clear-btn {
   position: absolute;
@@ -191,7 +191,7 @@ main { flex: 1; overflow: hidden; display: flex; }
   top: calc(100% + 2px);
   left: 0; right: 0;
   background: white;
-  border: 1.5px solid #1d4ed8;
+  border: 1.5px solid #1e3d6e;
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.13);
   z-index: 200;
@@ -205,7 +205,7 @@ main { flex: 1; overflow: hidden; display: flex; }
   transition: background 0.1s;
 }
 .suggest-item:last-child { border-bottom: none; }
-.suggest-item:hover, .suggest-item.active { background: #eff6ff; }
+.suggest-item:hover, .suggest-item.active { background: #edf2fa; }
 .s-name { font-size: 15px; font-weight: 700; color: #1e293b; }
 .s-name mark { background: #fef08a; color: #1e293b; border-radius: 2px; padding: 0 1px; }
 .s-furi { font-size: 11px; color: #94a3b8; margin-top: 1px; }
@@ -217,19 +217,19 @@ main { flex: 1; overflow: hidden; display: flex; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #eff6ff;
-  border: 1.5px solid #bfdbfe;
+  background: #edf2fa;
+  border: 1.5px solid #a8c4e5;
   border-radius: 7px;
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
-  color: #1d4ed8;
+  color: #1e3d6e;
   cursor: pointer;
   transition: all 0.15s;
   font-family: inherit;
   white-space: nowrap;
 }
-.clinic-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+.clinic-btn:hover { background: #c8dff5; border-color: #90b7de; }
 
 .rlabel-row {
   display: flex;
@@ -269,7 +269,7 @@ main { flex: 1; overflow: hidden; display: flex; }
   transition: transform 0.2s;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
-.toll-toggle.on .toggle-track { background: #16a34a; }
+.toll-toggle.on .toggle-track { background: #1a6b40; }
 .toll-toggle.on .toggle-track::after { transform: translateX(18px); }
 .toll-label { font-size: 13px; color: #475569; font-weight: 600; }
 .toll-label small { display: block; font-size: 11px; color: #94a3b8; font-weight: 400; margin-top: 1px; }
@@ -278,22 +278,22 @@ main { flex: 1; overflow: hidden; display: flex; }
 .swap-row { display: flex; justify-content: center; padding: 4px 0; }
 .swap-btn {
   background: white;
-  border: 2px solid #1d4ed8;
+  border: 2px solid #1e3d6e;
   border-radius: 50%;
   width: 36px; height: 36px;
   cursor: pointer;
-  color: #1d4ed8;
+  color: #1e3d6e;
   font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
 }
-.swap-btn:hover { background: #eff6ff; transform: rotate(180deg); }
+.swap-btn:hover { background: #edf2fa; transform: rotate(180deg); }
 
 .nav-btn {
   width: 100%;
-  background: #1d4ed8;
+  background: #1e3d6e;
   color: white;
   border: none;
   border-radius: 14px;
@@ -306,11 +306,11 @@ main { flex: 1; overflow: hidden; display: flex; }
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: 0 4px 16px rgba(29,78,216,0.35);
+  box-shadow: 0 4px 16px rgba(30,61,110,0.3);
   transition: all 0.15s;
   font-family: inherit;
 }
-.nav-btn:hover:not(:disabled) { background: #1e40af; transform: translateY(-1px); }
+.nav-btn:hover:not(:disabled) { background: #172f55; transform: translateY(-1px); }
 .nav-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: default; transform: none; }
 
 /* ── Manage Screen ── */
@@ -337,14 +337,14 @@ input[type="text"] {
   background: #f8fafc;
   transition: border-color 0.15s;
 }
-input[type="text"]:focus { border-color: #1d4ed8; background: white; }
+input[type="text"]:focus { border-color: #1e3d6e; background: white; }
 
 .add-btn {
-  background: #16a34a; color: white; border: none; border-radius: 8px;
+  background: #1a6b40; color: white; border: none; border-radius: 8px;
   padding: 0 22px; font-size: 14px; font-weight: 700; cursor: pointer;
   height: 40px; white-space: nowrap; font-family: inherit; transition: background 0.15s; flex-shrink: 0;
 }
-.add-btn:hover { background: #15803d; }
+.add-btn:hover { background: #155a35; }
 .add-btn:disabled { background: #94a3b8; cursor: default; }
 
 .tbl-head {
@@ -361,11 +361,11 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
 .tbl-name { font-weight: 700; font-size: 15px; color: #1e293b; }
 .tbl-addr { font-size: 13px; color: #64748b; padding-right: 12px; }
 .del-btn {
-  background: none; border: 1.5px solid #fca5a5; border-radius: 6px;
-  color: #ef4444; font-size: 12px; font-weight: 700; padding: 4px 10px;
+  background: none; border: 1.5px solid #f4aaaa; border-radius: 6px;
+  color: #c53030; font-size: 12px; font-weight: 700; padding: 4px 10px;
   cursor: pointer; transition: all 0.12s; font-family: inherit;
 }
-.del-btn:hover { background: #fee2e2; border-color: #ef4444; }
+.del-btn:hover { background: #fce8e8; border-color: #c53030; }
 
 .empty-msg { text-align: center; padding: 48px 24px; color: #94a3b8; font-size: 14px; line-height: 1.7; }
 
@@ -374,11 +374,11 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
   border: 2px dashed #cbd5e1; border-radius: 10px; padding: 28px;
   text-align: center; cursor: pointer; transition: all 0.15s; color: #94a3b8; font-size: 14px; line-height: 1.7;
 }
-.csv-drop:hover, .csv-drop.drag-over { border-color: #1d4ed8; background: #eff6ff; color: #1d4ed8; }
+.csv-drop:hover, .csv-drop.drag-over { border-color: #1e3d6e; background: #edf2fa; color: #1e3d6e; }
 .csv-drop strong { display: block; font-size: 15px; margin-bottom: 4px; color: #475569; }
-.csv-preview { margin-top: 14px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #15803d; display: none; align-items: center; justify-content: space-between; gap: 12px; }
-.import-btn { background: #16a34a; color: white; border: none; border-radius: 7px; padding: 8px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background 0.15s; }
-.import-btn:hover { background: #15803d; }
+.csv-preview { margin-top: 14px; background: #e8f4ee; border: 1px solid #7cbd9c; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #155a35; display: none; align-items: center; justify-content: space-between; gap: 12px; }
+.import-btn { background: #1a6b40; color: white; border: none; border-radius: 7px; padding: 8px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background 0.15s; }
+.import-btn:hover { background: #155a35; }
 .import-btn:disabled { background: #94a3b8; cursor: default; }
 .csv-note { font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.6; }
 
@@ -401,12 +401,12 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
 }
 .today-clinic-toggle {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
-  background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 8px;
-  padding: 8px 14px; font-size: 13px; font-weight: 700; color: #1d4ed8;
+  background: #edf2fa; border: 1.5px solid #a8c4e5; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; color: #1e3d6e;
   transition: all 0.15s;
 }
-.today-clinic-toggle:hover { background: #dbeafe; }
-.today-clinic-toggle.active { background: #1d4ed8; color: white; border-color: #1d4ed8; }
+.today-clinic-toggle:hover { background: #c8dff5; }
+.today-clinic-toggle.active { background: #1e3d6e; color: white; border-color: #1e3d6e; }
 
 .today-input-wrap { position: relative; }
 .today-input {
@@ -414,11 +414,11 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
   padding: 11px 14px; font-size: 15px; font-family: inherit;
   outline: none; background: #f8fafc; color: #1e293b; transition: border-color 0.15s;
 }
-.today-input:focus { border-color: #1d4ed8; background: white; }
+.today-input:focus { border-color: #1e3d6e; background: white; }
 .today-input::placeholder { color: #cbd5e1; }
 .today-suggest {
   position: absolute; top: calc(100% + 2px); left: 0; right: 0;
-  background: white; border: 1.5px solid #1d4ed8; border-radius: 12px;
+  background: white; border: 1.5px solid #1e3d6e; border-radius: 12px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.13); z-index: 200; overflow: hidden; display: none;
 }
 
@@ -436,11 +436,11 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
 .visit-item:last-child { border-bottom: none; }
 .visit-num {
   width: 24px; height: 24px; border-radius: 50%;
-  background: #1d4ed8; color: white;
+  background: #1e3d6e; color: white;
   font-size: 12px; font-weight: 800;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.visit-num.clinic { background: #16a34a; }
+.visit-num.clinic { background: #1a6b40; }
 .visit-info { flex: 1; min-width: 0; }
 .visit-name { font-weight: 700; font-size: 15px; color: #1e293b; }
 .visit-addr { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -448,15 +448,24 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
   background: none; border: none; color: #cbd5e1; font-size: 18px;
   cursor: pointer; padding: 4px; line-height: 1; transition: color 0.12s;
 }
-.visit-del:hover { color: #ef4444; }
+.visit-del:hover { color: #c53030; }
+
+.drag-handle {
+  color: #cbd5e1; cursor: grab; font-size: 18px; padding: 2px 4px;
+  user-select: none; flex-shrink: 0; line-height: 1;
+}
+.drag-handle:active { cursor: grabbing; }
+.drag-placeholder { width: 26px; flex-shrink: 0; }
+.visit-item.dragging { opacity: 0.35; background: #f8fafc; }
+.visit-item.drag-over { background: #edf2fa; border-radius: 8px; outline: 2px dashed #90b7de; }
 
 .calc-btn {
-  width: 100%; background: #1d4ed8; color: white; border: none;
+  width: 100%; background: #1e3d6e; color: white; border: none;
   border-radius: 12px; padding: 15px; font-size: 15px; font-weight: 800;
   cursor: pointer; font-family: inherit; transition: all 0.15s;
-  box-shadow: 0 4px 14px rgba(29,78,216,0.3);
+  box-shadow: 0 4px 14px rgba(30,61,110,0.25);
 }
-.calc-btn:hover:not(:disabled) { background: #1e40af; transform: translateY(-1px); }
+.calc-btn:hover:not(:disabled) { background: #172f55; transform: translateY(-1px); }
 .calc-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: default; transform: none; }
 
 /* Results */
@@ -476,7 +485,7 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
 }
 .result-leg-line { width: 2px; background: #e2e8f0; align-self: stretch; margin-left: 11px; }
 .result-time {
-  background: #eff6ff; color: #1d4ed8;
+  background: #edf2fa; color: #1e3d6e;
   border-radius: 6px; padding: 3px 10px;
   font-size: 13px; font-weight: 700;
 }
@@ -485,9 +494,9 @@ input[type="text"]:focus { border-color: #1d4ed8; background: white; }
   display: flex; justify-content: space-between; align-items: center;
 }
 .result-total span { font-size: 14px; font-weight: 700; color: #475569; }
-.result-total strong { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+.result-total strong { font-size: 20px; font-weight: 800; color: #1e3d6e; }
 
-.result-error { font-size: 13px; color: #ef4444; padding: 8px 0; }
+.result-error { font-size: 13px; color: #c53030; padding: 8px 0; }
 .calculating { text-align: center; padding: 20px; color: #94a3b8; font-size: 14px; }
 </style>
 </head>
@@ -1001,7 +1010,7 @@ if (sessionStorage.getItem('auth') === '1') {
 
 /* ── 本日の訪問 ── */
 let todayList = [];
-let clinicStart = false;
+let clinicStart = true;
 
 const CLINIC_ENTRY = {
   id: '__clinic__',
@@ -1075,18 +1084,55 @@ function renderTodayList() {
   card.style.display = 'block';
   btn.disabled = fullList.length < 2;
 
-  list.innerHTML = fullList.map((p, i) => `
-    <div class="visit-item">
-      <div class="visit-num ${p.id === '__clinic__' ? 'clinic' : ''}">${i + 1}</div>
+  list.innerHTML = fullList.map((p, i) => {
+    const isClinic = p.id === '__clinic__';
+    const tidx = i - (clinicStart ? 1 : 0);
+    return `
+    <div class="visit-item${isClinic ? '' : ' draggable'}"
+         ${isClinic ? '' : `draggable="true" data-tidx="${tidx}"`}>
+      ${isClinic ? '<div class="drag-placeholder"></div>' : '<div class="drag-handle" title="ドラッグで並び替え">⠿</div>'}
+      <div class="visit-num ${isClinic ? 'clinic' : ''}">${i + 1}</div>
       <div class="visit-info">
         <div class="visit-name">${esc(p.name)}</div>
         <div class="visit-addr">${esc(p.address)}</div>
       </div>
-      ${p.id === '__clinic__' ? '' : `<button class="visit-del" onclick="removeFromToday(${i - (clinicStart ? 1 : 0)})">✕</button>`}
-    </div>
-  `).join('');
+      ${isClinic ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
+    </div>`;
+  }).join('');
 
+  setupDragReorder();
   document.getElementById('result-area').innerHTML = '';
+}
+
+let dragSrcIdx = null;
+
+function setupDragReorder() {
+  const items = document.querySelectorAll('.visit-item.draggable');
+  items.forEach(item => {
+    item.addEventListener('dragstart', e => {
+      dragSrcIdx = parseInt(item.dataset.tidx);
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => item.classList.add('dragging'), 0);
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('dragging');
+      document.querySelectorAll('.visit-item').forEach(el => el.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('.visit-item').forEach(el => el.classList.remove('drag-over'));
+      item.classList.add('drag-over');
+    });
+    item.addEventListener('drop', e => {
+      e.preventDefault();
+      const destIdx = parseInt(item.dataset.tidx);
+      if (isNaN(dragSrcIdx) || isNaN(destIdx) || dragSrcIdx === destIdx) return;
+      const [moved] = todayList.splice(dragSrcIdx, 1);
+      todayList.splice(destIdx, 0, moved);
+      renderTodayList();
+    });
+  });
 }
 
 /* ── ジオコーディング & ルート計算 ── */
@@ -1178,6 +1224,7 @@ setupAutocomplete('from');
 setupAutocomplete('to');
 setupTodayAutocomplete();
 setupCSV();
+document.getElementById('clinic-toggle').classList.add('active');
 if (sessionStorage.getItem('auth') === '1') load();
 </script>
 </body>
