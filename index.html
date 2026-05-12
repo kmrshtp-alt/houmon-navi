@@ -1000,7 +1000,7 @@ const CLINIC_ENTRY = {
   id: '__clinic__',
   name: '在宅療養支援クリニック ここはる',
   address: '福岡県福岡市城南区南片江１丁目２４',
-  lat: null, lng: null
+  lat: 33.5648, lng: 130.3608
 };
 
 
@@ -1115,10 +1115,16 @@ function setupDragReorder() {
 }
 
 /* ── ジオコーディング & ルート計算 ── */
+function toHalfWidth(s) {
+  return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+          .replace(/[－−]/g, '-');
+}
+
 async function geocode(p) {
   if (p.lat && p.lng) return { lat: p.lat, lng: p.lng };
   await new Promise(r => setTimeout(r, 1100));
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(p.address)}&format=json&limit=1&countrycodes=jp`;
+  const addr = toHalfWidth(p.address);
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1&countrycodes=jp`;
   const res = await fetch(url, { headers: { 'Accept-Language': 'ja', 'User-Agent': 'houmon-navi/1.0' } });
   const data = await res.json();
   if (!data.length) throw new Error(`住所が見つかりません: ${p.name}`);
