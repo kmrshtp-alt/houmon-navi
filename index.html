@@ -619,8 +619,20 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
         <div class="card-body">
           <div class="form-row">
             <div class="fg">
-              <label>患者名</label>
-              <input type="text" id="new-name" placeholder="例：田中 花子 様" autocomplete="off">
+              <label>姓</label>
+              <input type="text" id="new-sei" placeholder="田中" autocomplete="off">
+            </div>
+            <div class="fg">
+              <label>名</label>
+              <input type="text" id="new-mei" placeholder="花子" autocomplete="off">
+            </div>
+            <div class="fg">
+              <label>ふりがな（姓）</label>
+              <input type="text" id="new-furi-sei" placeholder="たなか" autocomplete="off">
+            </div>
+            <div class="fg">
+              <label>ふりがな（名）</label>
+              <input type="text" id="new-furi-mei" placeholder="はなこ" autocomplete="off">
             </div>
             <div class="fg" style="flex:2">
               <label>住所</label>
@@ -662,16 +674,21 @@ async function load() {
 }
 
 async function addPatient() {
-  const name    = document.getElementById('new-name').value.trim();
-  const address = document.getElementById('new-addr').value.trim();
-  if (!name || !address) { alert('患者名と住所を入力してください'); return; }
+  const sei  = document.getElementById('new-sei').value.trim();
+  const mei  = document.getElementById('new-mei').value.trim();
+  const addr = document.getElementById('new-addr').value.trim();
+  if (!sei || !addr) { alert('姓と住所を入力してください'); return; }
+  const name     = mei ? `${sei} ${mei}` : sei;
+  const furiSei  = document.getElementById('new-furi-sei').value.trim();
+  const furiMei  = document.getElementById('new-furi-mei').value.trim();
+  const furigana = [furiSei, furiMei].filter(Boolean).join(' ');
   const btn = document.getElementById('add-btn');
   btn.disabled = true; btn.textContent = '追加中...';
-  const { error } = await db.from('patients').insert({ name, address, furigana: '' });
+  const { error } = await db.from('patients').insert({ name, address: addr, furigana });
   btn.disabled = false; btn.textContent = '＋ 追加';
   if (error) { alert('追加に失敗しました\n' + error.message); return; }
-  document.getElementById('new-name').value = '';
-  document.getElementById('new-addr').value = '';
+  ['new-sei','new-mei','new-furi-sei','new-furi-mei','new-addr'].forEach(id =>
+    document.getElementById(id).value = '');
   await load();
 }
 
@@ -951,8 +968,10 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-document.getElementById('new-name').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('new-addr').focus();
+[['new-sei','new-mei'],['new-mei','new-furi-sei'],['new-furi-sei','new-furi-mei'],['new-furi-mei','new-addr']].forEach(([from,to]) => {
+  document.getElementById(from).addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById(to).focus();
+  });
 });
 document.getElementById('new-addr').addEventListener('keydown', e => {
   if (e.key === 'Enter') addPatient();
