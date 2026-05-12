@@ -205,10 +205,10 @@ main { flex: 1; overflow: hidden; display: flex; }
   display: none;
 }
 .suggest-item {
-  padding: 11px 16px;
-  cursor: pointer;
-  border-bottom: 1px solid #f1f5f9;
-  transition: background 0.1s;
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; border-bottom: 1px solid #f1f5f9;
+  padding: 11px 16px; cursor: pointer;
+  transition: background 0.1s; font-family: inherit;
 }
 .suggest-item:last-child { border-bottom: none; }
 .suggest-item:hover, .suggest-item.active { background: #edf2fa; }
@@ -1181,11 +1181,11 @@ function setupTodayAutocomplete() {
     if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
-      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></div>`;
+      return `<button type="button" class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></button>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('touchstart', () => { selecting = true; }, { passive: true });
-      el.addEventListener('mousedown', e => { e.preventDefault(); }); // PCでblurを防ぐ
+      el.addEventListener('mousedown',  () => { selecting = true; });
       el.addEventListener('click', () => {
         const p = patients.find(x => x.id === el.dataset.id);
         if (p) addToToday(p);
