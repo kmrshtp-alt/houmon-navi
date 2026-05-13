@@ -245,7 +245,10 @@ main { flex: 1; overflow: hidden; display: flex; }
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
+.from-btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* Toll toggle */
 .toll-toggle {
@@ -626,7 +629,10 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
       <div class="route-row">
         <div class="rlabel-row">
           <div class="rlabel from">出発</div>
-          <button class="clinic-btn" onclick="setClinic()">🏥 ここはるから出発</button>
+          <div class="from-btn-group">
+            <button class="clinic-btn" onclick="setCurrentLocation()">📍 現在地から</button>
+            <button class="clinic-btn" onclick="setClinic()">🏥 ここはるから</button>
+          </div>
         </div>
         <div class="route-input-wrap">
           <input class="route-input" id="from-input" type="text" placeholder="患者名を入力..." autocomplete="off">
@@ -918,9 +924,13 @@ function updateNavBtn() {
 
 function openMaps() {
   if (!fromPatient || !toPatient) return;
-  const o = encodeURIComponent(fromPatient.address);
   const d = encodeURIComponent(toPatient.address);
-  window.open(`https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&travelmode=driving`, '_blank');
+  let url = `https://www.google.com/maps/dir/?api=1&destination=${d}&travelmode=driving`;
+  // 現在地から出発の場合は origin を省略 → Google マップが現在地を使用
+  if (fromPatient.id !== '__current__') {
+    url += `&origin=${encodeURIComponent(fromPatient.address)}`;
+  }
+  window.open(url, '_blank');
 }
 
 /* ── 患者一覧描画 ── */
@@ -1113,6 +1123,17 @@ function setClinic() {
   document.getElementById('from-addr').textContent = CLINIC.address;
   document.getElementById('from-clear').classList.add('visible');
   fromPatient = { id: '__clinic__', name: CLINIC.name, address: CLINIC.address };
+  document.getElementById('from-suggest').style.display = 'none';
+  updateNavBtn();
+}
+
+function setCurrentLocation() {
+  const el = document.getElementById('from-input');
+  el.value = '現在地';
+  el.className = 'route-input selected-from';
+  document.getElementById('from-addr').textContent = 'Google マップで現在地を使用します';
+  document.getElementById('from-clear').classList.add('visible');
+  fromPatient = { id: '__current__', name: '現在地', address: '' };
   document.getElementById('from-suggest').style.display = 'none';
   updateNavBtn();
 }
