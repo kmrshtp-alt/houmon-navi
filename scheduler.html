@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>訪問スケジューラ</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;background:#f1f5f9;color:#1e293b;min-height:100vh}
+
+/* ── ログイン ── */
+#login-screen{position:fixed;inset:0;background:#1e3d6e;display:flex;align-items:center;justify-content:center;z-index:999}
+.login-box{background:white;padding:40px 36px;border-radius:18px;box-shadow:0 16px 48px rgba(0,0,0,0.25);width:340px;text-align:center}
+.login-box h1{font-size:20px;color:#1e3d6e;margin-bottom:6px}
+.login-box p{font-size:13px;color:#64748b;margin-bottom:22px}
+.login-input{width:100%;padding:12px 14px;font-size:16px;border:2px solid #e2e8f0;border-radius:10px;outline:none;font-family:inherit;background:#f8fafc;color:#1e293b}
+.login-input:focus{border-color:#1e3d6e}
+.login-input.error{border-color:#c53030;animation:shake 0.3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.login-btn{width:100%;margin-top:14px;padding:12px;background:#1e3d6e;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
+.login-btn:hover{background:#172f55}
+#login-error{color:#c53030;font-size:12px;margin-top:8px;height:14px}
+
+/* ── ヘッダ ── */
+header{background:#1e3d6e;color:white;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:18px;display:flex;align-items:center;gap:8px}
+.brand a{color:#a8c4e5;font-size:12px;text-decoration:none;margin-left:12px;font-weight:500}
+.brand a:hover{color:white}
+.status{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#a8c4e5}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#64748b}
+.status-dot.ok{background:#22c55e}
+.status-dot.err{background:#ef4444}
+
+/* ── メイン ── */
+main{max-width:1100px;margin:24px auto;padding:0 16px}
+.card{background:white;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,0.06);margin-bottom:18px;overflow:hidden}
+.card-header{padding:14px 22px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em}
+.card-body{padding:20px 22px}
+
+/* ── 条件パネル ── */
+.cond-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.cond-item label{display:block;font-size:12px;font-weight:700;color:#64748b;margin-bottom:6px;letter-spacing:0.02em}
+.cond-item input[type="time"],.cond-item input[type="date"],.cond-item select{width:100%;padding:9px 12px;font-size:15px;border:2px solid #e2e8f0;border-radius:8px;outline:none;background:#f8fafc;color:#1e293b;font-family:inherit}
+.cond-item input:focus,.cond-item select:focus{border-color:#1e3d6e}
+.cond-row{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:14px;flex-wrap:wrap}
+.cond-row label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.cond-row input[type="checkbox"]{width:18px;height:18px;accent-color:#1e3d6e;cursor:pointer}
+
+/* ── 検索 ── */
+.search-wrap{position:relative}
+.search-input{width:100%;border:2px solid #e2e8f0;border-radius:10px;padding:11px 14px;font-size:15px;font-family:inherit;outline:none;background:#f8fafc;color:#1e293b;transition:border-color 0.15s}
+.search-input:focus{border-color:#1e3d6e;background:white}
+.search-input::placeholder{color:#cbd5e1}
+.suggest-list{position:absolute;top:calc(100% + 2px);left:0;right:0;background:white;border:1.5px solid #1e3d6e;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,0.13);z-index:200;overflow:hidden;display:none;max-height:380px;overflow-y:auto}
+.suggest-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #f1f5f9;padding:11px 16px;cursor:pointer;transition:background 0.1s;font-family:inherit;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.suggest-item:last-child{border-bottom:none}
+.suggest-item:hover,.suggest-item.active{background:#edf2fa}
+.suggest-item > *{pointer-events:none}
+.s-name{font-weight:700;font-size:14px;color:#1e293b}
+.s-meta{font-size:11px;color:#64748b;margin-top:2px}
+.suggest-empty{padding:14px 16px;color:#94a3b8;text-align:center;font-size:13px}
+mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
+
+/* ── 訪問予定リスト ── */
+.visit-list{margin-top:4px}
+.visit-item{display:grid;grid-template-columns:32px 1fr 110px 36px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.visit-item:last-child{border-bottom:none}
+.visit-num{width:30px;height:30px;border-radius:50%;background:#1e3d6e;color:white;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.visit-info{min-width:0}
+.visit-name{font-weight:700;font-size:14px;color:#1e293b}
+.visit-cond{font-size:11px;color:#64748b;margin-top:2px;line-height:1.4}
+.visit-cond .fixed{color:#92400e;font-weight:700}
+.visit-cond .ng{color:#c53030}
+.dur-input{width:100%;padding:6px 8px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:6px;outline:none;text-align:center;background:#f8fafc;font-family:inherit}
+.dur-input:focus{border-color:#1e3d6e;background:white}
+.dur-label{font-size:10px;color:#64748b;text-align:center;margin-top:2px}
+.del-btn{width:32px;height:32px;border:none;background:#fee2e2;color:#c53030;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.del-btn:hover{background:#fecaca}
+
+.empty-msg{padding:30px 16px;text-align:center;color:#94a3b8;font-size:13px}
+
+/* ── 最適化ボタン ── */
+.optimize-btn{width:100%;padding:14px;background:#1a6b40;color:white;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:6px;letter-spacing:0.02em}
+.optimize-btn:hover{background:#155a35}
+.optimize-btn:disabled{background:#94a3b8;cursor:not-allowed}
+
+/* ── 結果 ── */
+.result-row{display:grid;grid-template-columns:60px 32px 1fr;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
+.result-row:last-child{border-bottom:none}
+.result-row.clinic{background:#f1f5f9;border-radius:8px;padding:9px 12px;border-bottom:none;margin-bottom:4px;margin-top:4px}
+.result-row.lunch{background:#fef9c3;border-radius:8px;padding:9px 12px;border-bottom:none;margin-bottom:4px;margin-top:4px}
+.r-time{font-weight:700;color:#1e3d6e;font-variant-numeric:tabular-nums}
+.r-num{width:26px;height:26px;border-radius:50%;background:#1e3d6e;color:white;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.r-num.clinic{background:#1a6b40}
+.r-num.lunch{background:#92400e}
+.r-info{min-width:0}
+.r-name{font-weight:700;color:#1e293b}
+.r-meta{font-size:11px;color:#64748b}
+.r-warn{color:#c53030;font-size:11px;font-weight:700;margin-left:6px}
+
+.summary-row{display:flex;gap:14px;flex-wrap:wrap;padding:12px 16px;background:#edf2fa;border-radius:10px;margin-top:14px;font-size:13px;color:#1e3d6e;font-weight:700}
+.warning-box{background:#fef9c3;border-left:4px solid #ca8a04;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#854d0e}
+.error-box{background:#fee2e2;border-left:4px solid #dc2626;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#7f1d1d}
+
+.gmap-btn{display:block;width:100%;margin-top:14px;padding:14px;background:#1e3d6e;color:white;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
+.gmap-btn:hover{background:#172f55}
+
+/* ── モバイル ── */
+@media (max-width:640px){
+  body{overflow:auto}
+  header{padding:10px 12px;flex-wrap:wrap;gap:6px}
+  main{margin:14px auto;padding:0 12px}
+  .card-body{padding:14px 16px}
+  .visit-item{grid-template-columns:28px 1fr 90px 32px;gap:8px}
+  .result-row{grid-template-columns:54px 28px 1fr;gap:8px}
+  input[type="text"],input[type="time"],input[type="date"]{font-size:16px}
+}
+</style>
+</head>
+<body>
+
+<!-- ログイン -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🚗 訪問スケジューラ</h1>
+    <p>パスワードを入力してください</p>
+    <input class="login-input" id="login-input" type="password" placeholder="パスワード" autocomplete="off">
+    <button class="login-btn" onclick="checkLogin()">ログイン</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ヘッダ -->
+<header>
+  <div class="brand">🚗 訪問スケジューラ <a href="index.html">▶ 訪問診療ナビへ</a></div>
+  <div class="status"><div class="status-dot" id="status-dot"></div><span id="status-text">読込中…</span></div>
+</header>
+
+<main>
+
+  <!-- 今日の条件 -->
+  <div class="card">
+    <div class="card-header">今日の条件</div>
+    <div class="card-body">
+      <div class="cond-grid">
+        <div class="cond-item">
+          <label>訪問日</label>
+          <input type="date" id="visit-date">
+        </div>
+        <div class="cond-item">
+          <label>担当医（任意）</label>
+          <select id="doctor-filter">
+            <option value="">指定しない</option>
+            <option value="新田壮平">新田壮平</option>
+            <option value="濵本琢郎">濵本琢郎</option>
+            <option value="山田登紀子">山田登紀子</option>
+            <option value="今城透">今城透</option>
+            <option value="改田祐紀">改田祐紀</option>
+            <option value="木村翔">木村翔</option>
+          </select>
+        </div>
+        <div class="cond-item">
+          <label>最初の到着 下限</label>
+          <input type="time" id="first-min" value="09:00" step="900">
+        </div>
+        <div class="cond-item">
+          <label>最初の到着 希望</label>
+          <input type="time" id="first-target" value="10:00" step="900">
+        </div>
+        <div class="cond-item">
+          <label>クリニック帰着 希望</label>
+          <input type="time" id="return-target" value="17:45" step="900">
+        </div>
+      </div>
+      <div class="cond-row">
+        <label><input type="checkbox" id="lunch-toggle" checked> ここはるで昼休憩</label>
+        <input type="time" id="lunch-start" value="12:00" step="900" style="width:90px">
+        <span>〜</span>
+        <input type="time" id="lunch-end" value="13:00" step="900" style="width:90px">
+        <label style="margin-left:auto"><input type="checkbox" id="return-clinic" checked> 最後にここはるへ戻る</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- 患者選択 -->
+  <div class="card">
+    <div class="card-header">本日の訪問予定</div>
+    <div class="card-body">
+      <div class="search-wrap">
+        <input class="search-input" id="search-input" type="text" placeholder="患者名 / ふりがなで検索..." autocomplete="off">
+        <div class="suggest-list" id="suggest-list"></div>
+      </div>
+
+      <div class="visit-list" id="visit-list">
+        <div class="empty-msg">上の検索ボックスから患者を追加してください</div>
+      </div>
+
+      <button class="optimize-btn" id="optimize-btn" onclick="optimize()">🪄 最適順に並び替え</button>
+    </div>
+  </div>
+
+  <!-- 結果 -->
+  <div class="card" id="result-card" style="display:none">
+    <div class="card-header">最適化結果</div>
+    <div class="card-body">
+      <div id="result-body"></div>
+      <a class="gmap-btn" id="gmap-btn" href="#" target="_blank">📱 Google マップで経路を開く</a>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* ============================================================
+   訪問スケジューラ
+============================================================ */
+
+/* ── 認証情報（既存の訪問診療ナビと共通） ── */
+const SUPABASE_URL = 'https://hnsvhvhuxcyctblkahga.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhuc3Zodmh1eGN5Y3RibGthaGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NDExMDAsImV4cCI6MjA5NDExNzEwMH0.SYBiFwnOOoZibXrdEkP-afVOlIv2y1P_qYgxLn94YsA';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ── Google Maps API キー（HTTPリファラ制限済み） ── */
+const GMAPS_API_KEY = 'AIzaSyCOwmnhLf7L6l-T6M606v635iXDMTcdqv8';  // ← ここに発行したキーを貼る
+
+/* ── 定数 ── */
+const CLINIC = {
+  name: '在宅療養支援クリニック ここはる',
+  address: '福岡県福岡市城南区南片江１丁目２４',
+  lat: 33.5648, lng: 130.3608
+};
+const DAY_NAMES = ['日','月','火','水','木','金','土'];
+
+let patients = [];          // scheduler_patients 全件
+let todayList = [];         // 今日の訪問対象（{patient, duration}）
+let distanceCache = null;   // 直近の距離行列
+
+/* ── ステータス表示 ── */
+function setStatus(kind, text) {
+  document.getElementById('status-dot').className = 'status-dot ' + (kind === 'ok' ? 'ok' : kind === 'err' ? 'err' : '');
+  document.getElementById('status-text').textContent = text;
+}
+
+/* ── ログイン ── */
+const PW = 'kokoharu5586';
+function checkLogin() {
+  const val = document.getElementById('login-input').value;
+  if (val === PW) {
+    sessionStorage.setItem('auth', '1');
+    document.getElementById('login-screen').style.display = 'none';
+    init();
+  } else {
+    const input = document.getElementById('login-input');
+    input.value = '';
+    input.classList.add('error');
+    document.getElementById('login-error').textContent = 'パスワードが違います';
+    setTimeout(() => input.classList.remove('error'), 400);
+  }
+}
+document.getElementById('login-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') checkLogin();
+});
+
+/* ── 初期化 ── */
+async function init() {
+  // 訪問日のデフォルトは今日
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  document.getElementById('visit-date').value = `${yyyy}-${mm}-${dd}`;
+
+  await loadPatients();
+  setupSearch();
+  renderTodayList();
+}
+
+async function loadPatients() {
+  setStatus('', '読込中…');
+  const { data, error } = await db.from('scheduler_patients').select('*');
+  if (error) {
+    setStatus('err', '接続エラー: ' + error.message);
+    return;
+  }
+  patients = data || [];
+  setStatus('ok', `${patients.length}人 読込済み`);
+}
+
+/* ── ユーティリティ ── */
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function normalizeQuery(q) {
+  return q.toLowerCase()
+    .replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))  // カナ→ひら
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))  // 全角→半角
+    .replace(/\s+/g, '');
+}
+
+function matchPatient(p, q) {
+  const nq = normalizeQuery(q);
+  return normalizeQuery(p.name).includes(nq) ||
+         (p.furigana && normalizeQuery(p.furigana).includes(nq));
+}
+
+function getDayName(dateStr) {
+  const d = new Date(dateStr);
+  return DAY_NAMES[d.getDay()];
+}
+
+/* 予定メモの注釈テキスト（"30分確保"等）から推奨診察時間を抽出 */
+function extractDuration(memo_parsed) {
+  if (!memo_parsed) return 25;
+  const notes = (memo_parsed.notes || '').toString();
+  const m = notes.match(/(\d{2,3})\s*分(確保|設定|必要)/);
+  if (m) return parseInt(m[1]);
+  return 25;
+}
+
+/* 患者の制約サマリーを 1 行に */
+function condSummary(memo_parsed) {
+  if (!memo_parsed) return '<span style="color:#94a3b8">制約なし</span>';
+  const parts = [];
+  if (memo_parsed.available === 'free') return '<span style="color:#94a3b8">終日可</span>';
+  if (memo_parsed.fixed_time) parts.push(`<span class="fixed">⭐ ${memo_parsed.fixed_time} 固定</span>`);
+  if (memo_parsed.ng_days && memo_parsed.ng_days.length) parts.push(`<span class="ng">${memo_parsed.ng_days.join('')}不可</span>`);
+  if (memo_parsed.preferred_days && memo_parsed.preferred_days.length) parts.push(`${memo_parsed.preferred_days.join('')}希望`);
+  if (memo_parsed.preferred_time === 'morning') parts.push('午前希望');
+  else if (memo_parsed.preferred_time === 'afternoon') parts.push('午後希望');
+  else if (memo_parsed.preferred_time === 'before11') parts.push('11時まで');
+  else if (memo_parsed.preferred_time === 'after14') parts.push('14時以降');
+  if (memo_parsed.needs_review) parts.push('<span class="ng">⚠️要確認</span>');
+  return parts.length ? parts.join(' / ') : '<span style="color:#94a3b8">制約なし</span>';
+}
+
+/* ── 検索オートコンプリート（iOS Safari 対応版） ── */
+function setupSearch() {
+  const input = document.getElementById('search-input');
+  const sug = document.getElementById('suggest-list');
+  let idx = -1;
+  let selecting = false;
+
+  input.addEventListener('input', () => {
+    idx = -1;
+    const q = input.value.trim();
+    if (!q) { sug.style.display = 'none'; return; }
+
+    const doctorFilter = document.getElementById('doctor-filter').value;
+    const usedIds = new Set(todayList.map(t => t.patient.external_id));
+
+    let hits = patients.filter(p =>
+      !usedIds.has(p.external_id) &&
+      matchPatient(p, q) &&
+      (!doctorFilter || p.doctor === doctorFilter)
+    ).slice(0, 12);
+
+    if (!hits.length) {
+      sug.innerHTML = '<div class="suggest-empty">該当なし</div>';
+      sug.style.display = 'block';
+      return;
+    }
+
+    sug.innerHTML = hits.map(p => {
+      const hi = esc(p.name).replace(new RegExp(esc(q), 'gi'), m => `<mark>${m}</mark>`);
+      const meta = [p.furigana || '', p.doctor || '', p.address || ''].filter(Boolean).join(' / ');
+      return `<div class="suggest-item" data-id="${p.external_id}">
+        <div class="s-name">${hi}</div>
+        <div class="s-meta">${esc(meta)}</div>
+      </div>`;
+    }).join('');
+
+    sug.querySelectorAll('.suggest-item').forEach(el => {
+      el.addEventListener('touchstart', e => { e.preventDefault(); selecting = true; }, { passive: false });
+      el.addEventListener('touchend', e => {
+        e.preventDefault();
+        const p = patients.find(x => x.external_id === el.dataset.id);
+        input.focus();
+        if (p) addPatientToToday(p);
+        input.value = '';
+        sug.style.display = 'none';
+        selecting = false;
+      });
+      el.addEventListener('mousedown', e => { e.preventDefault(); selecting = true; });
+      el.addEventListener('click', () => {
+        const p = patients.find(x => x.external_id === el.dataset.id);
+        input.focus();
+        if (p) addPatientToToday(p);
+        input.value = '';
+        sug.style.display = 'none';
+        selecting = false;
+      });
+    });
+    sug.style.display = 'block';
+  });
+
+  input.addEventListener('keydown', e => {
+    const items = sug.querySelectorAll('.suggest-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx + 1, items.length - 1); items.forEach((el, i) => el.classList.toggle('active', i === idx)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx - 1, 0); items.forEach((el, i) => el.classList.toggle('active', i === idx)); }
+    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx]?.click(); }
+    else if (e.key === 'Escape') sug.style.display = 'none';
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => { if (!selecting) sug.style.display = 'none'; }, 300);
+  });
+
+  document.getElementById('doctor-filter').addEventListener('change', () => {
+    input.dispatchEvent(new Event('input'));
+  });
+}
+
+/* ── 今日の訪問予定 ── */
+function addPatientToToday(p) {
+  const duration = extractDuration(p.memo_parsed);
+  todayList.push({ patient: p, duration });
+  renderTodayList();
+  // 結果カードはクリア
+  document.getElementById('result-card').style.display = 'none';
+}
+
+function removePatient(idx) {
+  todayList.splice(idx, 1);
+  renderTodayList();
+  document.getElementById('result-card').style.display = 'none';
+}
+
+function updateDuration(idx, val) {
+  const n = parseInt(val);
+  if (isNaN(n) || n < 5 || n > 180) return;
+  todayList[idx].duration = n;
+}
+
+function renderTodayList() {
+  const list = document.getElementById('visit-list');
+  if (todayList.length === 0) {
+    list.innerHTML = '<div class="empty-msg">上の検索ボックスから患者を追加してください</div>';
+    return;
+  }
+  list.innerHTML = todayList.map((t, i) => `
+    <div class="visit-item">
+      <div class="visit-num">${i + 1}</div>
+      <div class="visit-info">
+        <div class="visit-name">${esc(t.patient.name)} <span style="font-size:11px;color:#64748b;font-weight:400">${esc(t.patient.doctor || '')}</span></div>
+        <div class="visit-cond">${condSummary(t.patient.memo_parsed)}</div>
+      </div>
+      <div>
+        <input class="dur-input" type="number" min="5" max="180" step="5" value="${t.duration}" onchange="updateDuration(${i}, this.value)">
+        <div class="dur-label">分</div>
+      </div>
+      <button class="del-btn" onclick="removePatient(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+/* ── 時刻ユーティリティ ── */
+function timeToMin(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+function minToTime(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+function roundUp15(min) {
+  return Math.ceil(min / 15) * 15;
+}
+
+/* 患者の指定日における利用可能時間帯（OK windows） */
+function patientFeasibleWindows(patient, dayName) {
+  const mp = patient.memo_parsed || {};
+  // 全日 NG
+  if (mp.ng_days && mp.ng_days.includes(dayName)) return [];
+
+  // 出発 9:00 〜 18:30 をフルウィンドウとする
+  let windows = [[9 * 60, 18 * 60 + 30]];
+
+  // NG windows を引く
+  const ngs = (mp.ng_windows || []).filter(w => w.day === dayName || w.day === '全');
+  for (const ng of ngs) {
+    const s = timeToMin(ng.start);
+    const e = timeToMin(ng.end);
+    windows = subtractWindow(windows, s, e);
+  }
+
+  // OK windows がある場合は積集合
+  const oks = (mp.ok_windows || []).filter(w => w.day === dayName || w.day === '全');
+  if (oks.length) {
+    let intersection = [];
+    for (const ok of oks) {
+      const os = timeToMin(ok.start);
+      const oe = timeToMin(ok.end);
+      for (const [ws, we] of windows) {
+        const is = Math.max(ws, os);
+        const ie = Math.min(we, oe);
+        if (is < ie) intersection.push([is, ie]);
+      }
+    }
+    windows = intersection;
+  }
+
+  // fixed_time があればその点だけ
+  if (mp.fixed_time) {
+    const ft = timeToMin(mp.fixed_time);
+    return [[ft, ft + 1]];  // ピンポイント
+  }
+
+  return windows;
+}
+
+function subtractWindow(windows, s, e) {
+  const out = [];
+  for (const [ws, we] of windows) {
+    if (e <= ws || s >= we) { out.push([ws, we]); continue; }
+    if (s > ws) out.push([ws, s]);
+    if (e < we) out.push([e, we]);
+  }
+  return out;
+}
+
+/* ── 距離行列取得 ── */
+async function fetchDistanceMatrix(locations) {
+  // locations: [{lat, lng, address}, ...]
+  // クリニックを 0 番目に置く前提
+  if (GMAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
+    // キー未設定時はフォールバック：直線距離 × 2 倍を移動時間とする
+    return fallbackDistanceMatrix(locations);
+  }
+
+  const origins = locations.map(l => l.lat && l.lng ? `${l.lat},${l.lng}` : l.address).join('|');
+  const destinations = origins;
+  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origins)}&destinations=${encodeURIComponent(destinations)}&mode=driving&language=ja&key=${GMAPS_API_KEY}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status !== 'OK') {
+      console.error('Distance Matrix error:', data);
+      return fallbackDistanceMatrix(locations);
+    }
+    // duration (秒) を分に
+    const n = locations.length;
+    const matrix = [];
+    for (let i = 0; i < n; i++) {
+      matrix[i] = [];
+      for (let j = 0; j < n; j++) {
+        const cell = data.rows[i].elements[j];
+        if (cell.status === 'OK' && cell.duration) {
+          matrix[i][j] = Math.ceil(cell.duration.value / 60);  // 分
+        } else {
+          matrix[i][j] = 999;
+        }
+      }
+    }
+    return matrix;
+  } catch (e) {
+    console.error('fetch error:', e);
+    return fallbackDistanceMatrix(locations);
+  }
+}
+
+function fallbackDistanceMatrix(locations) {
+  // 直線距離（km）× 2 を分換算（市街地での補正）
+  const n = locations.length;
+  const matrix = [];
+  for (let i = 0; i < n; i++) {
+    matrix[i] = [];
+    for (let j = 0; j < n; j++) {
+      if (i === j) { matrix[i][j] = 0; continue; }
+      const a = locations[i], b = locations[j];
+      if (a.lat && a.lng && b.lat && b.lng) {
+        const km = haversine(a.lat, a.lng, b.lat, b.lng);
+        matrix[i][j] = Math.max(5, Math.ceil(km * 2.5));  // 1km あたり 2.5 分
+      } else {
+        matrix[i][j] = 15;  // 不明時のデフォルト
+      }
+    }
+  }
+  return matrix;
+}
+
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/* 住所文字列から（lat, lng）を取得：scheduler_patients には保存していないので
+   ここではアドレス文字列のみ Distance Matrix API に渡す方式とする */
+
+/* ── 最適化アルゴリズム（時間枠付き貪欲法 + 順序の探索） ── */
+async function optimize() {
+  if (todayList.length === 0) {
+    alert('患者が選択されていません');
+    return;
+  }
+
+  const btn = document.getElementById('optimize-btn');
+  btn.disabled = true;
+  btn.textContent = '計算中…';
+
+  try {
+    const dateStr = document.getElementById('visit-date').value;
+    const dayName = getDayName(dateStr);
+    const firstMin = timeToMin(document.getElementById('first-min').value);
+    const firstTarget = timeToMin(document.getElementById('first-target').value);
+    const returnTarget = timeToMin(document.getElementById('return-target').value);
+    const lunchEnabled = document.getElementById('lunch-toggle').checked;
+    const lunchStart = timeToMin(document.getElementById('lunch-start').value);
+    const lunchEnd = timeToMin(document.getElementById('lunch-end').value);
+    const returnClinic = document.getElementById('return-clinic').checked;
+
+    // 距離行列取得（CLINIC を index 0、残りを 1..N）
+    const locations = [CLINIC, ...todayList.map(t => t.patient)];
+    const matrix = await fetchDistanceMatrix(locations);
+
+    // 各患者の利用可能時間帯
+    const feasWins = todayList.map(t => patientFeasibleWindows(t.patient, dayName));
+
+    // 各患者に「fixed」「優先」スコア
+    const annotations = todayList.map((t, i) => {
+      const mp = t.patient.memo_parsed || {};
+      const isFixed = !!mp.fixed_time;
+      const fixedTime = mp.fixed_time ? timeToMin(mp.fixed_time) : null;
+      return { isFixed, fixedTime, prefDays: mp.preferred_days || [], prefTime: mp.preferred_time };
+    });
+
+    // 訪問順序を決める：固定時刻患者を先に確保、その他を貪欲+局所探索
+    const result = solveSchedule(matrix, todayList, feasWins, annotations, {
+      firstMin, firstTarget, returnTarget,
+      lunchEnabled, lunchStart, lunchEnd, returnClinic
+    });
+
+    renderResult(result, locations);
+  } catch (e) {
+    console.error(e);
+    alert('最適化に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🪄 最適順に並び替え';
+  }
+}
+
+/* ── スケジューラ本体 ── */
+function solveSchedule(matrix, items, feasWins, annotations, cfg) {
+  const N = items.length;
+  // インデックス 0 = クリニック、1..N = 患者
+
+  // 戦略：複数の初期順序で貪欲スケジューリングを試して、最良を採用
+  // 1) 固定時刻優先 + その他は早い時間帯順
+  // 2) 北→南、南→北 などは座標が無いと困難なので、近い者を選ぶ greedy
+  // 3) 純粋に「最も早い feasible 開始時刻が早い順」
+
+  const candidates = [];
+
+  // 候補 1: 固定時刻 → 制約厳しい順
+  const order1 = sortIndicesByConstraint(items, feasWins, annotations);
+  candidates.push(simulateSchedule(order1, matrix, items, feasWins, annotations, cfg));
+
+  // 候補 2: 距離貪欲（クリニック近い順）
+  const order2 = sortIndicesByDistance(matrix, N);
+  candidates.push(simulateSchedule(order2, matrix, items, feasWins, annotations, cfg));
+
+  // 候補 3: ランダムシャッフル + 局所探索（N が小さければ全探索的に）
+  if (N <= 7) {
+    // 全順列を試す（N!）
+    const allOrders = permutations([...Array(N).keys()]);
+    for (const ord of allOrders) {
+      candidates.push(simulateSchedule(ord, matrix, items, feasWins, annotations, cfg));
+    }
+  } else {
+    // 簡易な 2-opt 改善
+    let best = candidates[0];
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const shuffled = shuffleArr([...Array(N).keys()]);
+      const sched = simulateSchedule(shuffled, matrix, items, feasWins, annotations, cfg);
+      candidates.push(sched);
+    }
+  }
+
+  // 最良を選ぶ：infeasible_count → total_time → late_minutes
+  candidates.sort((a, b) => {
+    if (a.infeasibleCount !== b.infeasibleCount) return a.infeasibleCount - b.infeasibleCount;
+    if (a.lateMin !== b.lateMin) return a.lateMin - b.lateMin;
+    return a.totalSpan - b.totalSpan;
+  });
+
+  return candidates[0];
+}
+
+function sortIndicesByConstraint(items, feasWins, annotations) {
+  const idx = [...Array(items.length).keys()];
+  idx.sort((a, b) => {
+    // 固定時刻優先
+    if (annotations[a].isFixed && !annotations[b].isFixed) return -1;
+    if (!annotations[a].isFixed && annotations[b].isFixed) return 1;
+    if (annotations[a].isFixed && annotations[b].isFixed) return annotations[a].fixedTime - annotations[b].fixedTime;
+    // 利用可能時間が短い順（厳しい順）
+    const lenA = feasWins[a].reduce((s, [ws, we]) => s + (we - ws), 0);
+    const lenB = feasWins[b].reduce((s, [ws, we]) => s + (we - ws), 0);
+    return lenA - lenB;
+  });
+  return idx;
+}
+
+function sortIndicesByDistance(matrix, N) {
+  // クリニック(0)からの距離が短い順
+  const idx = [...Array(N).keys()];
+  idx.sort((a, b) => matrix[0][a + 1] - matrix[0][b + 1]);
+  return idx;
+}
+
+function permutations(arr) {
+  if (arr.length <= 1) return [arr];
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    for (const p of permutations(rest)) {
+      out.push([arr[i], ...p]);
+    }
+  }
+  return out;
+}
+
+function shuffleArr(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
+  const N = order.length;
+  const visits = [];
+  let currentTime = cfg.firstMin;  // 最初の到着下限から開始候補
+  let infeasibleCount = 0;
+  let lateMin = 0;
+  let lunchTaken = false;
+
+  // 最初の患者の到着時刻 = max(firstTarget, クリニック→患者の移動時間後)
+  for (let step = 0; step < N; step++) {
+    const pIdx = order[step];
+    const matIdx = pIdx + 1;
+    const prevMatIdx = step === 0 ? 0 : order[step - 1] + 1;
+    const travel = matrix[prevMatIdx][matIdx];
+
+    // 移動後の最早到着時刻
+    let earliest = currentTime + travel;
+
+    // 昼休憩を挟むか判定
+    if (cfg.lunchEnabled && !lunchTaken && earliest >= cfg.lunchStart) {
+      // 戻り時間
+      const travelToClinic = matrix[prevMatIdx][0];
+      const lunchArrival = currentTime + travelToClinic;
+      const lunchActualStart = Math.max(lunchArrival, cfg.lunchStart);
+      const lunchActualEnd = Math.max(cfg.lunchEnd, lunchActualStart + 30);
+      // 昼休憩後の移動
+      const afterLunchTravel = matrix[0][matIdx];
+      const newEarliest = lunchActualEnd + afterLunchTravel;
+      if (newEarliest <= cfg.lunchEnd + 60) {  // 昼休憩を入れても極端に遅くならない場合のみ
+        visits.push({ type: 'lunch', start: lunchActualStart, end: lunchActualEnd });
+        lunchTaken = true;
+        earliest = newEarliest;
+        currentTime = lunchActualEnd;
+        // ※currentTimeはクリニック発に補正済み(0からの移動)
+      }
+    }
+
+    // 最初の患者は希望時刻に合わせる
+    if (step === 0) {
+      earliest = Math.max(earliest, cfg.firstTarget);
+    }
+
+    // 15 分刻みに切り上げ
+    earliest = roundUp15(earliest);
+
+    // 患者の利用可能時間帯に収まるか
+    const windows = feasWins[pIdx];
+    const ann = annotations[pIdx];
+    let arrival = -1;
+
+    if (ann.isFixed) {
+      // 固定時刻
+      if (ann.fixedTime >= earliest) {
+        arrival = ann.fixedTime;
+      } else {
+        infeasibleCount++;
+        arrival = ann.fixedTime;  // 固定時刻に強制
+      }
+    } else {
+      // ウィンドウ内で earliest 以降の最早スロットを探す
+      for (const [ws, we] of windows) {
+        const slot = Math.max(earliest, roundUp15(ws));
+        if (slot < we) { arrival = slot; break; }
+      }
+      if (arrival < 0) {
+        infeasibleCount++;
+        arrival = earliest;  // ウィンドウ外でも続行（要警告）
+      }
+    }
+
+    const dur = items[pIdx].duration;
+    const departure = arrival + dur;
+
+    visits.push({
+      type: 'patient',
+      idx: pIdx,
+      patient: items[pIdx].patient,
+      duration: dur,
+      arrival, departure,
+      travel: step === 0 ? matrix[0][matIdx] : travel,
+      warning: arrival < earliest || !inAnyWindow(arrival, windows) ? '時間制約外' : null
+    });
+
+    currentTime = departure;
+  }
+
+  // 帰着時間
+  const lastMatIdx = order[N - 1] + 1;
+  const returnTravel = cfg.returnClinic ? matrix[lastMatIdx][0] : 0;
+  const returnTime = currentTime + returnTravel;
+  if (returnTime > cfg.returnTarget) lateMin = returnTime - cfg.returnTarget;
+
+  const totalSpan = returnTime - visits[0].arrival + (visits[0].travel || 0);
+
+  return {
+    order, visits, returnTime, infeasibleCount, lateMin, totalSpan,
+    cfg, returnTravel, lunchTaken
+  };
+}
+
+function inAnyWindow(t, windows) {
+  return windows.some(([s, e]) => t >= s && t < e);
+}
+
+/* ── 結果描画 ── */
+function renderResult(result, locations) {
+  const card = document.getElementById('result-card');
+  const body = document.getElementById('result-body');
+
+  const rows = [];
+  const cfg = result.cfg;
+
+  // クリニック発（最初の患者の travel から逆算）
+  const firstVisit = result.visits.find(v => v.type === 'patient');
+  if (firstVisit) {
+    const depart = firstVisit.arrival - firstVisit.travel;
+    rows.push(`<div class="result-row clinic">
+      <div class="r-time">${minToTime(depart)}</div>
+      <div class="r-num clinic">🏥</div>
+      <div class="r-info"><div class="r-name">ここはる発</div></div>
+    </div>`);
+  }
+
+  let pNum = 0;
+  for (const v of result.visits) {
+    if (v.type === 'lunch') {
+      rows.push(`<div class="result-row lunch">
+        <div class="r-time">${minToTime(v.start)}</div>
+        <div class="r-num lunch">🍱</div>
+        <div class="r-info"><div class="r-name">ここはるで昼休憩 (〜${minToTime(v.end)})</div></div>
+      </div>`);
+    } else if (v.type === 'patient') {
+      pNum++;
+      const condText = condSummary(v.patient.memo_parsed);
+      const warn = v.warning ? `<span class="r-warn">⚠️ ${v.warning}</span>` : '';
+      rows.push(`<div class="result-row">
+        <div class="r-time">${minToTime(v.arrival)}</div>
+        <div class="r-num">${pNum}</div>
+        <div class="r-info">
+          <div class="r-name">${esc(v.patient.name)} ${warn}</div>
+          <div class="r-meta">${condText} ・ 診察 ${v.duration}分 ・ 移動 ${v.travel}分</div>
+        </div>
+      </div>`);
+    }
+  }
+
+  if (cfg.returnClinic && result.returnTravel > 0) {
+    rows.push(`<div class="result-row clinic">
+      <div class="r-time">${minToTime(result.returnTime)}</div>
+      <div class="r-num clinic">🏥</div>
+      <div class="r-info"><div class="r-name">ここはる着</div></div>
+    </div>`);
+  }
+
+  // サマリ
+  let totalTravel = result.visits.filter(v => v.type === 'patient').reduce((s, v) => s + v.travel, 0) + (result.returnTravel || 0);
+  let totalConsult = result.visits.filter(v => v.type === 'patient').reduce((s, v) => s + v.duration, 0);
+
+  const summary = `<div class="summary-row">
+    <div>📍 訪問 ${pNum}人</div>
+    <div>🚗 走行 ${totalTravel}分</div>
+    <div>🩺 診察 ${totalConsult}分</div>
+    <div>⏱ 総時間 ${minToTime(result.returnTime - (firstVisit.arrival - firstVisit.travel))}</div>
+  </div>`;
+
+  // 警告
+  let warnings = '';
+  if (result.infeasibleCount > 0) {
+    warnings += `<div class="warning-box">⚠️ ${result.infeasibleCount} 人の時間制約を完全には満たせませんでした。並び替え結果と各患者の予定メモを再確認してください。</div>`;
+  }
+  if (result.lateMin > 0) {
+    warnings += `<div class="warning-box">⚠️ 帰着が ${result.lateMin} 分遅れる予定です（${minToTime(result.returnTime)}）。</div>`;
+  }
+  if (cfg.lunchEnabled && !result.lunchTaken) {
+    warnings += `<div class="warning-box">⚠️ 訪問数が多く昼休憩を挟めませんでした。</div>`;
+  }
+  if (GMAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
+    warnings += `<div class="error-box">⚠️ Google Maps API キーが未設定です。移動時間は直線距離からの概算で計算されています。scheduler.html の <code>GMAPS_API_KEY</code> を実際のキーに置き換えてください。</div>`;
+  }
+
+  body.innerHTML = rows.join('') + summary + warnings;
+
+  // Google Maps URL
+  const orderedPatients = result.visits.filter(v => v.type === 'patient').map(v => v.patient);
+  const fullList = [CLINIC, ...orderedPatients];
+  if (cfg.returnClinic) fullList.push(CLINIC);
+  if (fullList.length >= 2) {
+    const origin = encodeURIComponent(fullList[0].address);
+    const destination = encodeURIComponent(fullList[fullList.length - 1].address);
+    const waypoints = fullList.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    if (waypoints) url += `&waypoints=${waypoints}`;
+    document.getElementById('gmap-btn').href = url;
+  }
+
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── 初回起動 ── */
+if (sessionStorage.getItem('auth') === '1') {
+  document.getElementById('login-screen').style.display = 'none';
+  init();
+}
+</script>
+
+</body>
+</html>
