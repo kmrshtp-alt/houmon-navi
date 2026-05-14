@@ -296,7 +296,7 @@ function normalizeQuery(q) {
   return q.toLowerCase()
     .replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))  // カナ→ひら
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))  // 全角→半角
-    .replace(/\s+/g, '');
+    .replace(/[\s　 ・·・]+/g, '');  // 半角・全角・NBSP・中点を除去
 }
 
 function matchPatient(p, q) {
@@ -685,11 +685,24 @@ function solveSchedule(matrix, items, feasWins, annotations, cfg) {
     }
   }
 
-  // 最良を選ぶ：infeasible_count → total_time → late_minutes
+  // 最良を選ぶ：
+  //   ① 制約違反が少ない
+  //   ② 帰着遅れが少ない
+  //   ③ 最初の到着が firstTarget(10:00) からのズレが少ない（遅すぎ・早すぎペナルティ）
+  //   ④ 昼休憩が取れている方が良い
+  //   ⑤ 走行時間が短い
   candidates.sort((a, b) => {
     if (a.infeasibleCount !== b.infeasibleCount) return a.infeasibleCount - b.infeasibleCount;
     if (a.lateMin !== b.lateMin) return a.lateMin - b.lateMin;
-    return a.totalSpan - b.totalSpan;
+    // 最初の到着の妥当性：10:00 からの乖離 (遅延を強く、早すぎを軽く罰する)
+    const devA = a.startDelay * 2 + a.startEarly * 0.5;
+    const devB = b.startDelay * 2 + b.startEarly * 0.5;
+    if (Math.abs(devA - devB) > 5) return devA - devB;  // 5分以上違えば優先
+    // 昼休憩が取れる方を優先（cfg.lunchEnabled の場合）
+    if (a.cfg.lunchEnabled) {
+      if (a.lunchTaken !== b.lunchTaken) return a.lunchTaken ? -1 : 1;
+    }
+    return a.totalTravel - b.totalTravel;
   });
 
   return candidates[0];
@@ -740,75 +753,82 @@ function shuffleArr(arr) {
 function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
   const N = order.length;
   const visits = [];
-  let currentTime = cfg.firstMin;  // 最初の到着下限から開始候補
+  let currentTime = cfg.firstMin;  // 最初の到着下限から開始候補（9:00）
   let infeasibleCount = 0;
   let lateMin = 0;
   let lunchTaken = false;
+  let totalTravel = 0;
+  let prevMatIdx = 0;  // クリニック起点
 
-  // 最初の患者の到着時刻 = max(firstTarget, クリニック→患者の移動時間後)
   for (let step = 0; step < N; step++) {
     const pIdx = order[step];
     const matIdx = pIdx + 1;
-    const prevMatIdx = step === 0 ? 0 : order[step - 1] + 1;
-    const travel = matrix[prevMatIdx][matIdx];
+    const directTravel = matrix[prevMatIdx][matIdx];
+    let travelUsed = directTravel;
 
-    // 移動後の最早到着時刻
-    let earliest = currentTime + travel;
+    // 直進移動した場合の到着
+    let earliest = currentTime + directTravel;
 
-    // 昼休憩を挟むか判定
-    if (cfg.lunchEnabled && !lunchTaken && earliest >= cfg.lunchStart) {
-      // 戻り時間
+    // 昼休憩判定：
+    //   - step > 0（最初の患者の前に昼休憩はおかしいので除外）
+    //   - 未取得
+    //   - 直進した場合に到着時刻が lunchStart 以降になる
+    if (cfg.lunchEnabled && !lunchTaken && step > 0 && earliest >= cfg.lunchStart) {
       const travelToClinic = matrix[prevMatIdx][0];
-      const lunchArrival = currentTime + travelToClinic;
-      const lunchActualStart = Math.max(lunchArrival, cfg.lunchStart);
+      const clinicArrival = currentTime + travelToClinic;
+      const lunchActualStart = Math.max(clinicArrival, cfg.lunchStart);
       const lunchActualEnd = Math.max(cfg.lunchEnd, lunchActualStart + 30);
-      // 昼休憩後の移動
       const afterLunchTravel = matrix[0][matIdx];
       const newEarliest = lunchActualEnd + afterLunchTravel;
-      if (newEarliest <= cfg.lunchEnd + 60) {  // 昼休憩を入れても極端に遅くならない場合のみ
+
+      // 経由ロス＝(prev→clinic→cur) - (prev→cur)
+      const detourLoss = (travelToClinic + afterLunchTravel) - directTravel;
+      // 経由ロスが 30 分以下なら採用（極端な迂回でなければ OK）
+      if (detourLoss <= 30) {
         visits.push({ type: 'lunch', start: lunchActualStart, end: lunchActualEnd });
         lunchTaken = true;
-        earliest = newEarliest;
         currentTime = lunchActualEnd;
-        // ※currentTimeはクリニック発に補正済み(0からの移動)
+        totalTravel += travelToClinic;  // 直前患者→クリニックの移動
+        travelUsed = afterLunchTravel;
+        earliest = newEarliest;
       }
     }
 
-    // 最初の患者は希望時刻に合わせる
+    // 最初の患者は firstMin（9:00）以降の必須制約のみ
     if (step === 0) {
-      earliest = Math.max(earliest, cfg.firstTarget);
+      earliest = Math.max(earliest, cfg.firstMin);
     }
 
     // 15 分刻みに切り上げ
     earliest = roundUp15(earliest);
 
-    // 患者の利用可能時間帯に収まるか
+    // 患者の利用可能時間帯
     const windows = feasWins[pIdx];
     const ann = annotations[pIdx];
     let arrival = -1;
 
     if (ann.isFixed) {
-      // 固定時刻
       if (ann.fixedTime >= earliest) {
         arrival = ann.fixedTime;
       } else {
         infeasibleCount++;
-        arrival = ann.fixedTime;  // 固定時刻に強制
+        arrival = ann.fixedTime;
       }
     } else {
-      // ウィンドウ内で earliest 以降の最早スロットを探す
       for (const [ws, we] of windows) {
         const slot = Math.max(earliest, roundUp15(ws));
         if (slot < we) { arrival = slot; break; }
       }
       if (arrival < 0) {
         infeasibleCount++;
-        arrival = earliest;  // ウィンドウ外でも続行（要警告）
+        arrival = earliest;
       }
     }
 
     const dur = items[pIdx].duration;
     const departure = arrival + dur;
+
+    totalTravel += travelUsed;
 
     visits.push({
       type: 'patient',
@@ -816,23 +836,29 @@ function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
       patient: items[pIdx].patient,
       duration: dur,
       arrival, departure,
-      travel: step === 0 ? matrix[0][matIdx] : travel,
-      warning: arrival < earliest || !inAnyWindow(arrival, windows) ? '時間制約外' : null
+      travel: travelUsed,
+      warning: !ann.isFixed && !inAnyWindow(arrival, windows) ? '時間制約外' : (ann.isFixed && ann.fixedTime < earliest ? '固定時刻に到達不能' : null)
     });
 
     currentTime = departure;
+    prevMatIdx = matIdx;
   }
 
-  // 帰着時間
-  const lastMatIdx = order[N - 1] + 1;
-  const returnTravel = cfg.returnClinic ? matrix[lastMatIdx][0] : 0;
+  // 帰着
+  const returnTravel = cfg.returnClinic ? matrix[prevMatIdx][0] : 0;
   const returnTime = currentTime + returnTravel;
   if (returnTime > cfg.returnTarget) lateMin = returnTime - cfg.returnTarget;
+  totalTravel += returnTravel;
 
-  const totalSpan = returnTime - visits[0].arrival + (visits[0].travel || 0);
+  // 最初の到着が firstTarget(10:00) からどれくらい乖離しているか
+  const firstArrival = visits.find(v => v.type === 'patient').arrival;
+  // 早すぎても遅すぎてもペナルティ。ただし制約由来でやむを得ない場合は仕方ない。
+  const startDelay = Math.max(0, firstArrival - cfg.firstTarget);  // 10:00以降のズレ
+  const startEarly = Math.max(0, cfg.firstTarget - firstArrival);  // 10:00より早い分
 
   return {
-    order, visits, returnTime, infeasibleCount, lateMin, totalSpan,
+    order, visits, returnTime, infeasibleCount, lateMin,
+    totalTravel, firstArrival, startDelay, startEarly,
     cfg, returnTravel, lunchTaken
   };
 }
@@ -892,8 +918,8 @@ function renderResult(result, locations) {
   }
 
   // サマリ
-  let totalTravel = result.visits.filter(v => v.type === 'patient').reduce((s, v) => s + v.travel, 0) + (result.returnTravel || 0);
-  let totalConsult = result.visits.filter(v => v.type === 'patient').reduce((s, v) => s + v.duration, 0);
+  const totalTravel = result.totalTravel || 0;
+  const totalConsult = result.visits.filter(v => v.type === 'patient').reduce((s, v) => s + v.duration, 0);
 
   const summary = `<div class="summary-row">
     <div>📍 訪問 ${pNum}人</div>
