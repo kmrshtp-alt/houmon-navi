@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>訪問スケジューラ</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>window._gMapsLoaded = false; function _gMapsCallback() { window._gMapsLoaded = true; }</script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCOwmnhLf7L6l-T6M606v635iXDMTcdqv8&callback=_gMapsCallback&loading=async"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;background:#f1f5f9;color:#1e293b;min-height:100vh}
@@ -221,8 +223,8 @@ const SUPABASE_URL = 'https://hnsvhvhuxcyctblkahga.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhuc3Zodmh1eGN5Y3RibGthaGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NDExMDAsImV4cCI6MjA5NDExNzEwMH0.SYBiFwnOOoZibXrdEkP-afVOlIv2y1P_qYgxLn94YsA';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/* ── Google Maps API キー（HTTPリファラ制限済み） ── */
-const GMAPS_API_KEY = 'AIzaSyCOwmnhLf7L6l-T6M606v635iXDMTcdqv8';  // ← ここに発行したキーを貼る
+/* ── Google Maps API（JS SDK 経由 → CORS 不要） ── */
+// DistanceMatrixService を使うので REST fetch は行わない
 
 /* ── 定数 ── */
 const CLINIC = {
@@ -521,43 +523,70 @@ function subtractWindow(windows, s, e) {
   return out;
 }
 
-/* ── 距離行列取得 ── */
+/* ── Google Maps JS SDK のロード待ち ── */
+function waitForGMaps(timeout = 12000) {
+  return new Promise((resolve, reject) => {
+    if (window._gMapsLoaded) { resolve(); return; }
+    const start = Date.now();
+    const check = () => {
+      if (window._gMapsLoaded) { resolve(); return; }
+      if (Date.now() - start > timeout) { reject(new Error('Google Maps の読込がタイムアウトしました')); return; }
+      setTimeout(check, 150);
+    };
+    check();
+  });
+}
+
+/* ── 距離行列取得（JS SDK の DistanceMatrixService を使用） ── */
 async function fetchDistanceMatrix(locations) {
-  // locations: [{lat, lng, address}, ...]
-  // クリニックを 0 番目に置く前提
-  if (GMAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
-    // キー未設定時はフォールバック：直線距離 × 2 倍を移動時間とする
+  // locations: [{address, lat?, lng?}, ...]  クリニックが index 0
+  try {
+    await waitForGMaps();
+  } catch (e) {
+    console.warn('Google Maps SDK 未ロード → フォールバック使用', e.message);
     return fallbackDistanceMatrix(locations);
   }
 
-  const origins = locations.map(l => l.lat && l.lng ? `${l.lat},${l.lng}` : l.address).join('|');
-  const destinations = origins;
-  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origins)}&destinations=${encodeURIComponent(destinations)}&mode=driving&language=ja&key=${GMAPS_API_KEY}`;
+  // DistanceMatrixService はアドレス文字列を直接受け付ける（内部でジオコード）
+  const addresses = locations.map(l => l.address);
+  const service = new google.maps.DistanceMatrixService();
 
   try {
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.status !== 'OK') {
-      console.error('Distance Matrix error:', data);
-      return fallbackDistanceMatrix(locations);
-    }
-    // duration (秒) を分に
+    const response = await new Promise((resolve, reject) => {
+      service.getDistanceMatrix({
+        origins: addresses,
+        destinations: addresses,
+        travelMode: google.maps.TravelMode.DRIVING,
+        unitSystem: google.maps.UnitSystem.METRIC,
+        language: 'ja',
+      }, (resp, status) => {
+        if (status === google.maps.DistanceMatrixStatus.OK) {
+          resolve(resp);
+        } else {
+          reject(new Error('DistanceMatrixService error: ' + status));
+        }
+      });
+    });
+
     const n = locations.length;
     const matrix = [];
     for (let i = 0; i < n; i++) {
       matrix[i] = [];
       for (let j = 0; j < n; j++) {
-        const cell = data.rows[i].elements[j];
-        if (cell.status === 'OK' && cell.duration) {
-          matrix[i][j] = Math.ceil(cell.duration.value / 60);  // 分
+        if (i === j) { matrix[i][j] = 0; continue; }
+        const el = response.rows[i].elements[j];
+        if (el.status === 'OK' && el.duration) {
+          matrix[i][j] = Math.ceil(el.duration.value / 60);  // 秒 → 分（切り上げ）
         } else {
-          matrix[i][j] = 999;
+          console.warn(`距離取得失敗 [${i}→${j}]`, el.status, addresses[i], '→', addresses[j]);
+          matrix[i][j] = 15;  // 取得失敗分のみ 15 分デフォルト
         }
       }
     }
     return matrix;
+
   } catch (e) {
-    console.error('fetch error:', e);
+    console.error('DistanceMatrixService 例外:', e);
     return fallbackDistanceMatrix(locations);
   }
 }
@@ -938,9 +967,6 @@ function renderResult(result, locations) {
   }
   if (cfg.lunchEnabled && !result.lunchTaken) {
     warnings += `<div class="warning-box">⚠️ 訪問数が多く昼休憩を挟めませんでした。</div>`;
-  }
-  if (GMAPS_API_KEY === 'YOUR_GOOGLE_MAPS_API_KEY_HERE') {
-    warnings += `<div class="error-box">⚠️ Google Maps API キーが未設定です。移動時間は直線距離からの概算で計算されています。scheduler.html の <code>GMAPS_API_KEY</code> を実際のキーに置き換えてください。</div>`;
   }
 
   body.innerHTML = rows.join('') + summary + warnings;
