@@ -615,6 +615,9 @@ function patientFeasibleWindows(patient, dayName) {
     windows = intersection;
   }
 
+  // 時刻順にソート（登録順によらず早い枠から試せるようにする）
+  windows.sort((a, b) => a[0] - b[0]);
+
   // fixed_time があればその点だけ
   if (mp.fixed_time) {
     const ft = timeToMin(mp.fixed_time);
