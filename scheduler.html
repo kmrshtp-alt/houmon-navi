@@ -251,18 +251,6 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
           <input type="date" id="visit-date">
         </div>
         <div class="cond-item">
-          <label>担当医（任意）</label>
-          <select id="doctor-filter">
-            <option value="">指定しない</option>
-            <option value="新田壮平">新田壮平</option>
-            <option value="濵本琢郎">濵本琢郎</option>
-            <option value="山田登紀子">山田登紀子</option>
-            <option value="今城透">今城透</option>
-            <option value="改田祐紀">改田祐紀</option>
-            <option value="木村翔">木村翔</option>
-          </select>
-        </div>
-        <div class="cond-item">
           <label>クリニック発 下限</label>
           <input type="time" id="first-min" value="09:30" step="900">
         </div>
@@ -501,13 +489,11 @@ function setupSearch() {
     const q = input.value.trim();
     if (!q) { sug.style.display = 'none'; return; }
 
-    const doctorFilter = document.getElementById('doctor-filter').value;
     const usedIds = new Set(todayList.map(t => t.patient.external_id));
 
     let hits = patients.filter(p =>
       !usedIds.has(p.external_id) &&
-      matchPatient(p, q) &&
-      (!doctorFilter || p.doctor === doctorFilter)
+      matchPatient(p, q)
     ).slice(0, 12);
 
     if (!hits.length) {
@@ -582,9 +568,7 @@ function setupSearch() {
     setTimeout(() => { if (!selecting) sug.style.display = 'none'; }, 300);
   });
 
-  document.getElementById('doctor-filter').addEventListener('change', () => {
-    input.dispatchEvent(new Event('input'));
-  });
+
 }
 
 /* ── 今日の訪問予定 ── */
