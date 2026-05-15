@@ -798,80 +798,149 @@ async function optimize() {
 /* ── スケジューラ本体 ── */
 function solveSchedule(matrix, items, feasWins, annotations, cfg) {
   const N = items.length;
-  // インデックス 0 = クリニック、1..N = 患者
 
-  // 戦略：複数の初期順序で貪欲スケジューリングを試して、最良を採用
-  // 1) 固定時刻優先 + その他は早い時間帯順
-  // 2) 北→南、南→北 などは座標が無いと困難なので、近い者を選ぶ greedy
-  // 3) 純粋に「最も早い feasible 開始時刻が早い順」
-
-  const candidates = [];
-
-  // 候補 1: 固定時刻 → 制約厳しい順
-  const order1 = sortIndicesByConstraint(items, feasWins, annotations);
-  candidates.push(simulateSchedule(order1, matrix, items, feasWins, annotations, cfg));
-
-  // 候補 2: 距離貪欲（クリニック近い順）
-  const order2 = sortIndicesByDistance(matrix, N);
-  candidates.push(simulateSchedule(order2, matrix, items, feasWins, annotations, cfg));
-
-  // 候補 3: ランダムシャッフル + 局所探索（N が小さければ全探索的に）
   if (N <= 7) {
-    // 全順列を試す（N!）
+    // 全順列を試す（N! ≦ 5040）→ 最適解が保証される
     const allOrders = permutations([...Array(N).keys()]);
-    for (const ord of allOrders) {
-      candidates.push(simulateSchedule(ord, matrix, items, feasWins, annotations, cfg));
-    }
-  } else {
-    // 簡易な 2-opt 改善
-    let best = candidates[0];
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const shuffled = shuffleArr([...Array(N).keys()]);
-      const sched = simulateSchedule(shuffled, matrix, items, feasWins, annotations, cfg);
-      candidates.push(sched);
-    }
+    const candidates = allOrders.map(ord =>
+      simulateSchedule(ord, matrix, items, feasWins, annotations, cfg));
+    candidates.sort(scheduleCmp);
+    return candidates[0];
   }
 
-  // 最良を選ぶ：
-  //   ① 制約違反が少ない
-  //   ② 帰着遅れが少ない
-  //   ③ 最初の到着が firstTarget(10:00) からのズレが少ない（遅すぎ・早すぎペナルティ）
-  //   ④ 昼休憩が取れている方が良い
-  //   ⑤ 走行時間が短い
-  candidates.sort((a, b) => {
-    if (a.infeasibleCount !== b.infeasibleCount) return a.infeasibleCount - b.infeasibleCount;
-    if (a.lateMin !== b.lateMin) return a.lateMin - b.lateMin;
-    // 最初の到着の妥当性：10:00 からの乖離 (遅延を強く、早すぎを軽く罰する)
-    const devA = a.startDelay * 2 + a.startEarly * 0.5;
-    const devB = b.startDelay * 2 + b.startEarly * 0.5;
-    if (Math.abs(devA - devB) > 5) return devA - devB;  // 5分以上違えば優先
-    // 昼休憩が取れる方を優先（cfg.lunchEnabled の場合）
-    if (a.cfg.lunchEnabled) {
-      if (a.lunchTaken !== b.lunchTaken) return a.lunchTaken ? -1 : 1;
-    }
-    return a.totalTravel - b.totalTravel;
-  });
+  // N > 7: 制約優先挿入法（人間の発想に近いアルゴリズム）
+  //   「固定時刻の患者 → 時間帯が狭い患者 → 自由な患者」の順に、
+  //    既存スケジュールの中で最もスコアが良い位置に1人ずつ挿入していく
+  const candidates = [];
 
+  // メイン：制約優先挿入
+  const mainOrder = constraintFirstInsert(matrix, items, feasWins, annotations, cfg, false);
+  candidates.push(simulateSchedule(mainOrder, matrix, items, feasWins, annotations, cfg));
+
+  // スワップ局所改善（全ペアのスワップを繰り返して深化）
+  candidates.push(swapImprove(mainOrder, matrix, items, feasWins, annotations, cfg));
+
+  // フリー患者をランダムに並べた多様性バリアント（制約固定患者の位置は変えない）
+  for (let i = 0; i < 15; i++) {
+    const rndOrder = constraintFirstInsert(matrix, items, feasWins, annotations, cfg, true);
+    candidates.push(simulateSchedule(rndOrder, matrix, items, feasWins, annotations, cfg));
+  }
+
+  // フォールバック：クリニックからの距離貪欲
+  const distOrder = sortIndicesByDistance(matrix, N);
+  candidates.push(simulateSchedule(distOrder, matrix, items, feasWins, annotations, cfg));
+
+  candidates.sort(scheduleCmp);
   return candidates[0];
 }
 
-function sortIndicesByConstraint(items, feasWins, annotations) {
-  const idx = [...Array(items.length).keys()];
-  idx.sort((a, b) => {
-    // 固定時刻優先
-    if (annotations[a].isFixed && !annotations[b].isFixed) return -1;
-    if (!annotations[a].isFixed && annotations[b].isFixed) return 1;
-    if (annotations[a].isFixed && annotations[b].isFixed) return annotations[a].fixedTime - annotations[b].fixedTime;
-    // 利用可能時間が短い順（厳しい順）
-    const lenA = feasWins[a].reduce((s, [ws, we]) => s + (we - ws), 0);
-    const lenB = feasWins[b].reduce((s, [ws, we]) => s + (we - ws), 0);
-    return lenA - lenB;
+/* 制約優先挿入
+ * ① 固定時刻患者（時刻順）→ ② 時間帯が狭い患者（午前縛り等、早い枠から）
+ * → ③ 自由な患者（shuffleFree=true でランダム）
+ * 各患者を既存スケジュールの全挿入位置から最良を選んで追加 */
+function constraintFirstInsert(matrix, items, feasWins, annotations, cfg, shuffleFree) {
+  const N = items.length;
+  const fixedList = [];
+  const constrainedList = [];
+  const freeList = [];
+
+  for (let i = 0; i < N; i++) {
+    const ann = annotations[i];
+    const totalFeasible = feasWins[i].reduce((s, [ws, we]) => s + we - ws, 0);
+    if (ann.isFixed) {
+      fixedList.push(i);
+    } else if (totalFeasible < 4 * 60) {
+      // 利用可能時間帯が 4 時間未満 → 制約が厳しいグループ
+      constrainedList.push(i);
+    } else {
+      freeList.push(i);
+    }
+  }
+
+  // 固定：固定時刻の早い順（アンカーとして最初に確保）
+  fixedList.sort((a, b) => annotations[a].fixedTime - annotations[b].fixedTime);
+
+  // 制約あり：最早ウィンドウ開始が早い順（午前縛りの人を先に枠取り）
+  constrainedList.sort((a, b) => {
+    const aStart = feasWins[a].length ? feasWins[a][0][0] : 18 * 60;
+    const bStart = feasWins[b].length ? feasWins[b][0][0] : 18 * 60;
+    return aStart - bStart;
   });
-  return idx;
+
+  // フリー：多様性のためにシャッフル可
+  if (shuffleFree) shuffleArr(freeList);
+
+  // 挿入順: 固定 → 制約あり → フリー
+  const insertOrder = [...fixedList, ...constrainedList, ...freeList];
+
+  // 1人ずつ最良位置に挿入
+  let order = [];
+  for (const idx of insertOrder) {
+    order = insertBestPos(idx, order, matrix, items, feasWins, annotations, cfg);
+  }
+  return order;
+}
+
+/* idx を currentOrder の全挿入位置から最スコア位置に挿入して返す */
+function insertBestPos(newIdx, currentOrder, matrix, items, feasWins, annotations, cfg) {
+  if (currentOrder.length === 0) return [newIdx];
+  let bestScore = Infinity;
+  let bestOrder = null;
+  for (let pos = 0; pos <= currentOrder.length; pos++) {
+    const testOrder = [
+      ...currentOrder.slice(0, pos),
+      newIdx,
+      ...currentOrder.slice(pos)
+    ];
+    const result = simulateSchedule(testOrder, matrix, items, feasWins, annotations, cfg);
+    const score = schedScore(result);
+    if (score < bestScore) { bestScore = score; bestOrder = testOrder; }
+  }
+  return bestOrder;
+}
+
+/* スワップ局所改善：全ペアのスワップで改善がある限り繰り返す */
+function swapImprove(initOrder, matrix, items, feasWins, annotations, cfg) {
+  let best = simulateSchedule(initOrder, matrix, items, feasWins, annotations, cfg);
+  let improved = true;
+  while (improved) {
+    improved = false;
+    const ord = best.order;
+    for (let i = 0; i < ord.length - 1; i++) {
+      for (let j = i + 1; j < ord.length; j++) {
+        const newOrd = [...ord];
+        [newOrd[i], newOrd[j]] = [newOrd[j], newOrd[i]];
+        const cand = simulateSchedule(newOrd, matrix, items, feasWins, annotations, cfg);
+        if (schedScore(cand) < schedScore(best)) { best = cand; improved = true; }
+      }
+    }
+  }
+  return best;
+}
+
+/* スコア計算（小さいほど良い）
+ *  ① 制約違反 >> ② 帰着遅れ >> ③ 出発遅れ >> ④ 走行時間 */
+function schedScore(r) {
+  return r.infeasibleCount * 100000
+       + r.lateMin        * 1000
+       + r.startDelay     * 10
+       + r.totalTravel;
+}
+
+/* 候補ソート用比較関数 */
+function scheduleCmp(a, b) {
+  if (a.infeasibleCount !== b.infeasibleCount) return a.infeasibleCount - b.infeasibleCount;
+  if (a.lateMin !== b.lateMin) return a.lateMin - b.lateMin;
+  const devA = a.startDelay * 2 + a.startEarly * 0.5;
+  const devB = b.startDelay * 2 + b.startEarly * 0.5;
+  if (Math.abs(devA - devB) > 5) return devA - devB;
+  if (a.cfg.lunchEnabled) {
+    if (a.lunchTaken !== b.lunchTaken) return a.lunchTaken ? -1 : 1;
+  }
+  return a.totalTravel - b.totalTravel;
 }
 
 function sortIndicesByDistance(matrix, N) {
-  // クリニック(0)からの距離が短い順
   const idx = [...Array(N).keys()];
   idx.sort((a, b) => matrix[0][a + 1] - matrix[0][b + 1]);
   return idx;
