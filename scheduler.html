@@ -123,9 +123,12 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .ed-save:disabled{background:#94a3b8;cursor:not-allowed}
 #toast-msg{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a6b40;color:white;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:600;pointer-events:none;transition:opacity 0.3s;opacity:0}
 @media(max-width:640px){
+  /* エディタ */
   .raw-grid{grid-template-columns:1fr}
   #editor-overlay{padding:0;align-items:flex-end}
   #editor-modal{border-radius:16px 16px 0 0;max-height:92vh}
+  .editor-ft{flex-direction:row}
+  .ed-cancel,.ed-save{flex:1;text-align:center}
 }
 
 .empty-msg{padding:30px 16px;text-align:center;color:#94a3b8;font-size:13px}
@@ -163,13 +166,57 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 /* ── モバイル ── */
 @media (max-width:640px){
+  /* ヘッダ */
   body{overflow:auto}
-  header{padding:10px 12px;flex-wrap:wrap;gap:6px}
-  main{margin:14px auto;padding:0 12px}
-  .card-body{padding:14px 16px}
-  .visit-item{grid-template-columns:28px 1fr 90px 32px;gap:8px}
-  .result-row{grid-template-columns:54px 28px 1fr;gap:8px}
-  input[type="text"],input[type="time"],input[type="date"]{font-size:16px}
+  header{padding:10px 14px;gap:6px}
+  .brand{font-size:15px}
+  .brand a{display:none}
+  .status{font-size:12px}
+
+  /* メインレイアウト */
+  main{margin:10px auto;padding:0 10px}
+  .card{border-radius:12px;margin-bottom:12px}
+  .card-header{padding:10px 14px;font-size:12px}
+  .card-body{padding:14px 14px}
+
+  /* 条件グリッド：2列 */
+  .cond-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .cond-item label{font-size:11px;margin-bottom:4px}
+  .cond-item input[type="time"],
+  .cond-item input[type="date"],
+  .cond-item select{font-size:16px;padding:8px 8px}
+  .cond-row{font-size:13px;margin-top:10px;gap:8px}
+
+  /* 検索 */
+  .search-input{font-size:16px;padding:12px 14px}
+
+  /* 訪問予定リスト */
+  .visit-name{font-size:15px}
+  .visit-cond{font-size:11px}
+  .visit-item-top{gap:8px}
+  .visit-item-bottom{padding-left:38px;gap:8px;margin-top:8px}
+  .dur-input{width:72px;font-size:16px;padding:8px 6px}
+  .del-btn,.edit-btn{width:40px;height:40px;font-size:16px;border-radius:10px}
+
+  /* 最適化ボタン */
+  .optimize-btn{padding:16px;font-size:17px;border-radius:14px}
+
+  /* 結果 */
+  .result-row{grid-template-columns:52px 26px 1fr;gap:6px;font-size:13px}
+  .result-row.clinic,.result-row.lunch{padding:8px 10px}
+  .r-time{font-size:12px}
+  .r-name{font-size:13px}
+  .r-meta{font-size:10px}
+  .r-violation{font-size:10px}
+  .summary-row{gap:8px;padding:10px 12px;font-size:12px}
+
+  /* Google Mapsボタン */
+  .gmap-btn{padding:16px;font-size:15px}
+
+  /* 全inputのiOS zoom防止 */
+  input[type="text"],input[type="time"],
+  input[type="date"],input[type="number"],
+  select,textarea{font-size:16px}
 }
 </style>
 </head>
