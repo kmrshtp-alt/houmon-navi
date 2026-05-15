@@ -151,6 +151,11 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 .summary-row{display:flex;gap:14px;flex-wrap:wrap;padding:12px 16px;background:#edf2fa;border-radius:10px;margin-top:14px;font-size:13px;color:#1e3d6e;font-weight:700}
 .warning-box{background:#fef9c3;border-left:4px solid #ca8a04;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#854d0e}
+.row-ng{background:#fff5f5}
+.row-warn{background:#fffbeb}
+.r-violation{font-size:11px;margin-top:3px;padding:2px 6px;border-radius:4px;display:inline-block}
+.r-viol-ng{color:#c53030;background:#fee2e2}
+.r-viol-warn{color:#92400e;background:#fef3c7}
 .error-box{background:#fee2e2;border-left:4px solid #dc2626;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#7f1d1d}
 
 .gmap-btn{display:block;width:100%;margin-top:14px;padding:14px;background:#1e3d6e;color:white;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
@@ -785,7 +790,7 @@ async function optimize() {
       lunchEnabled, lunchDuration, returnClinic
     });
 
-    renderResult(result, locations);
+    renderResult(result, locations, dateStr, dayName);
   } catch (e) {
     console.error(e);
     alert('最適化に失敗しました: ' + e.message);
@@ -1321,10 +1326,73 @@ function showToast(msg) {
   t._tid = setTimeout(() => { t.style.opacity = '0'; }, 2500);
 }
 
+/* ── 制約違反の詳細メッセージを生成 ── */
+function violationDetails(patient, arrival, dayName, hasWarning) {
+  const mp = patient.memo_parsed || {};
+  const msgs = [];
+
+  // ── ハード制約（時間帯NG / 固定時刻） ──
+  if (hasWarning) {
+    if (mp.fixed_time) {
+      msgs.push({ level: 'ng', text: `固定時刻 ${mp.fixed_time} に到達不能（実際の到着: ${minToTime(arrival)}）` });
+    } else {
+      // NG枠に入っているか
+      const ngViolated = (mp.ng_windows || []).filter(w =>
+        (w.day === dayName || w.day === '全') &&
+        arrival >= timeToMin(w.start) && arrival < timeToMin(w.end)
+      );
+      for (const ng of ngViolated) {
+        msgs.push({ level: 'ng', text: `NG時間帯（${ng.start}〜${ng.end}）に訪問になっています` });
+      }
+      // OK枠があるのに外れているか
+      const oks = (mp.ok_windows || []).filter(w => w.day === dayName || w.day === '全');
+      if (oks.length > 0) {
+        const inOk = oks.some(ok => arrival >= timeToMin(ok.start) && arrival < timeToMin(ok.end));
+        if (!inOk) {
+          const okStr = oks.map(o => `${o.start}〜${o.end}`).join('、');
+          msgs.push({ level: 'ng', text: `指定可能時間（${okStr}）外の訪問になっています` });
+        }
+      }
+      // ウィンドウが空（その日全てNG）
+      if (!ngViolated.length && !oks.length) {
+        msgs.push({ level: 'ng', text: '時間制約を満たせる枠がありませんでした' });
+      }
+    }
+  }
+
+  // ── ソフト制約（希望時間帯） ──
+  if (mp.preferred_time === 'morning' && arrival >= 12 * 60) {
+    msgs.push({ level: 'warn', text: `午前希望ですが ${minToTime(arrival)} の訪問になっています` });
+  } else if (mp.preferred_time === 'afternoon' && arrival < 12 * 60) {
+    msgs.push({ level: 'warn', text: `午後希望ですが ${minToTime(arrival)} の訪問になっています` });
+  } else if (mp.preferred_time === 'before11' && arrival >= 11 * 60) {
+    msgs.push({ level: 'warn', text: `11時までの希望ですが ${minToTime(arrival)} の訪問になっています` });
+  } else if (mp.preferred_time === 'after14' && arrival < 14 * 60) {
+    msgs.push({ level: 'warn', text: `14時以降の希望ですが ${minToTime(arrival)} の訪問になっています` });
+  }
+
+  // ── ソフト制約（希望曜日） ──
+  if (mp.preferred_days && mp.preferred_days.length > 0 && !mp.preferred_days.includes(dayName)) {
+    msgs.push({ level: 'warn', text: `${mp.preferred_days.join('・')}曜希望ですが ${dayName}曜の訪問になっています` });
+  }
+
+  return msgs;
+}
+
 /* ── 結果描画 ── */
-function renderResult(result, locations) {
+function renderResult(result, locations, dateStr, dayName) {
   const card = document.getElementById('result-card');
   const body = document.getElementById('result-body');
+
+  // ヘッダーに曜日・日付を表示
+  const dateLabel = (() => {
+    if (!dateStr) return '最適化結果';
+    const d = new Date(dateStr);
+    const m = d.getMonth() + 1, day = d.getDate();
+    const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+    return `最適化結果 — ${m}月${day}日（${dow}）`;
+  })();
+  card.querySelector('.card-header').textContent = dateLabel;
 
   const rows = [];
   const cfg = result.cfg;
@@ -1351,13 +1419,21 @@ function renderResult(result, locations) {
     } else if (v.type === 'patient') {
       pNum++;
       const condText = condSummary(v.patient.memo_parsed);
-      const warn = v.warning ? `<span class="r-warn">⚠️ ${v.warning}</span>` : '';
-      rows.push(`<div class="result-row">
+      const violations = violationDetails(v.patient, v.arrival, dayName, !!v.warning);
+      const hasNG   = violations.some(m => m.level === 'ng');
+      const hasWarn = violations.some(m => m.level === 'warn');
+      const badgeIcon = hasNG ? '❌' : hasWarn ? '⚠️' : '';
+      const rowClass = hasNG ? 'result-row row-ng' : hasWarn ? 'result-row row-warn' : 'result-row';
+      const detailHtml = violations.map(m =>
+        `<div class="r-violation ${m.level === 'ng' ? 'r-viol-ng' : 'r-viol-warn'}">${m.level === 'ng' ? '❌' : '⚠️'} ${esc(m.text)}</div>`
+      ).join('');
+      rows.push(`<div class="${rowClass}">
         <div class="r-time">${minToTime(v.arrival)}</div>
         <div class="r-num">${pNum}</div>
         <div class="r-info">
-          <div class="r-name">${esc(v.patient.name)} ${warn}</div>
+          <div class="r-name">${esc(v.patient.name)}${badgeIcon ? ` <span class="r-warn">${badgeIcon}</span>` : ''}</div>
           <div class="r-meta">${condText} ・ 診察 ${v.duration}分 ・ 移動 ${v.travel}分</div>
+          ${detailHtml}
         </div>
       </div>`);
     }
@@ -1385,10 +1461,15 @@ function renderResult(result, locations) {
     <div style="margin-left:auto;font-weight:500;color:#64748b;font-size:11px">🕐 ${ts} 計算</div>
   </div>`;
 
-  // 警告
+  // 警告（各行の詳細は行内に表示済み。サマリはカウントのみ）
   let warnings = '';
-  if (result.infeasibleCount > 0) {
-    warnings += `<div class="warning-box">⚠️ ${result.infeasibleCount} 人の時間制約を完全には満たせませんでした。並び替え結果と各患者の予定メモを再確認してください。</div>`;
+  const ngCount  = result.visits.filter(v => v.type === 'patient' && violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'ng')).length;
+  const warnCount = result.visits.filter(v => v.type === 'patient' && !violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'ng') && violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'warn')).length;
+  if (ngCount > 0) {
+    warnings += `<div class="warning-box" style="border-color:#c53030;background:#fff5f5;color:#c53030">❌ ${ngCount}人の時間制約（NG枠・固定時刻）が満たせていません。各行の詳細を確認してください。</div>`;
+  }
+  if (warnCount > 0) {
+    warnings += `<div class="warning-box">⚠️ ${warnCount}人の希望（時間帯・曜日）が完全には反映できていません。</div>`;
   }
   if (result.lateMin > 0) {
     warnings += `<div class="warning-box">⚠️ 帰着が ${result.lateMin} 分遅れる予定です（${minToTime(result.returnTime)}）。</div>`;
