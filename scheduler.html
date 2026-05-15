@@ -65,7 +65,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 /* ── 訪問予定リスト ── */
 .visit-list{margin-top:4px}
-.visit-item{display:grid;grid-template-columns:32px 1fr 110px 36px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.visit-item{display:grid;grid-template-columns:32px 1fr 110px 32px 32px;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9}
 .visit-item:last-child{border-bottom:none}
 .visit-num{width:30px;height:30px;border-radius:50%;background:#1e3d6e;color:white;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .visit-info{min-width:0}
@@ -78,6 +78,51 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .dur-label{font-size:10px;color:#64748b;text-align:center;margin-top:2px}
 .del-btn{width:32px;height:32px;border:none;background:#fee2e2;color:#c53030;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .del-btn:hover{background:#fecaca}
+.edit-btn{width:32px;height:32px;border:none;background:#edf2fa;color:#1e3d6e;border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.edit-btn:hover{background:#dbeafe}
+.s-edit-btn{width:26px;height:26px;border:none;background:none;color:#94a3b8;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-left:auto}
+.s-edit-btn:hover{background:#edf2fa;color:#1e3d6e}
+/* ── 患者制約エディタ ── */
+#editor-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
+#editor-modal{background:white;border-radius:16px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.25)}
+.editor-hd{padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.editor-hd-title{font-weight:800;font-size:16px;color:#1e293b}
+.editor-hd-sub{font-size:11px;color:#94a3b8;margin-top:3px}
+.editor-close{width:32px;height:32px;border:none;background:#f1f5f9;border-radius:8px;cursor:pointer;font-size:16px;flex-shrink:0}
+.editor-body{overflow-y:auto;padding:18px 20px;flex:1;-webkit-overflow-scrolling:touch}
+.editor-sec{margin-bottom:20px}
+.editor-sec-title{font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f1f5f9}
+.raw-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.raw-label{font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:4px}
+.raw-text{font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;min-height:52px;white-space:pre-wrap;line-height:1.6;word-break:break-all}
+.raw-text.empty{color:#cbd5e1;font-style:italic}
+.edit-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.edit-label{font-size:12px;font-weight:700;color:#475569;min-width:76px}
+.edit-select,.edit-input-text{padding:7px 10px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:8px;outline:none;background:#f8fafc;color:#1e293b;font-family:inherit}
+.edit-select:focus,.edit-input-text:focus{border-color:#1e3d6e}
+.day-checks{display:flex;gap:5px;flex-wrap:wrap}
+.day-chk{display:flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;background:#f1f5f9;padding:4px 8px;border-radius:6px;user-select:none;-webkit-user-select:none}
+.day-chk input{accent-color:#1e3d6e}
+.windows-list{display:flex;flex-direction:column;gap:6px}
+.window-row{display:flex;align-items:center;gap:5px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;flex-wrap:wrap}
+.wr-day{width:54px;padding:4px 5px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:white;font-family:inherit}
+.wr-time{width:80px;padding:4px 6px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:white;font-family:inherit}
+.wr-reason{flex:1;min-width:60px;padding:4px 7px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:white;font-family:inherit}
+.win-del{width:24px;height:24px;border:none;background:#fee2e2;color:#c53030;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0}
+.win-add-btn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:6px 12px;background:#edf2fa;border:none;border-radius:8px;cursor:pointer;color:#1e3d6e;font-family:inherit;font-weight:700;margin-top:6px}
+.notes-ta{width:100%;padding:8px 10px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:8px;outline:none;background:#f8fafc;font-family:inherit;resize:vertical;min-height:56px;color:#1e293b}
+.notes-ta:focus{border-color:#1e3d6e}
+.editor-ft{padding:14px 20px;border-top:1px solid #f1f5f9;display:flex;gap:10px;justify-content:flex-end}
+.ed-cancel{padding:10px 20px;background:#f1f5f9;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:#64748b}
+.ed-save{padding:10px 24px;background:#1e3d6e;color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+.ed-save:disabled{background:#94a3b8;cursor:not-allowed}
+#toast-msg{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a6b40;color:white;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:600;pointer-events:none;transition:opacity 0.3s;opacity:0}
+@media(max-width:640px){
+  .raw-grid{grid-template-columns:1fr}
+  #editor-overlay{padding:0;align-items:flex-end}
+  #editor-modal{border-radius:16px 16px 0 0;max-height:92vh}
+  .visit-item{grid-template-columns:28px 1fr 80px 28px 28px;gap:6px}
+}
 
 .empty-msg{padding:30px 16px;text-align:center;color:#94a3b8;font-size:13px}
 
@@ -211,6 +256,25 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 </main>
 
+<!-- 患者制約エディタ -->
+<div id="editor-overlay" style="display:none" onclick="editorBgClick(event)">
+  <div id="editor-modal">
+    <div class="editor-hd">
+      <div>
+        <div class="editor-hd-title" id="ed-name"></div>
+        <div class="editor-hd-sub" id="ed-sub"></div>
+      </div>
+      <button class="editor-close" onclick="closeEditor()">✕</button>
+    </div>
+    <div class="editor-body" id="ed-body"></div>
+    <div class="editor-ft">
+      <button class="ed-cancel" onclick="closeEditor()">キャンセル</button>
+      <button class="ed-save" id="ed-save-btn" onclick="saveEditor()">保存</button>
+    </div>
+  </div>
+</div>
+<div id="toast-msg"></div>
+
 <script>
 /* ============================================================
    訪問スケジューラ
@@ -310,10 +374,13 @@ function getDayName(dateStr) {
   return DAY_NAMES[d.getDay()];
 }
 
-/* 予定メモの注釈テキスト（"30分確保"等）から推奨診察時間を抽出 */
-function extractDuration(memo_parsed) {
-  if (!memo_parsed) return 25;
-  const notes = (memo_parsed.notes || '').toString();
+/* 推奨診察時間を取得（優先順：DBのvisit_duration_min → memo_parsedのnotes → デフォルト25分） */
+function extractDuration(patient) {
+  // DBに直接登録された診察時間を最優先
+  if (patient.visit_duration_min) return patient.visit_duration_min;
+  const mp = patient.memo_parsed;
+  if (!mp) return 25;
+  const notes = (mp.notes || '').toString();
   const m = notes.match(/(\d{2,3})\s*分(確保|設定|必要)/);
   if (m) return parseInt(m[1]);
   return 25;
@@ -365,13 +432,34 @@ function setupSearch() {
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(new RegExp(esc(q), 'gi'), m => `<mark>${m}</mark>`);
       const meta = [p.furigana || '', p.doctor || '', p.address || ''].filter(Boolean).join(' / ');
-      return `<div class="suggest-item" data-id="${p.external_id}">
-        <div class="s-name">${hi}</div>
-        <div class="s-meta">${esc(meta)}</div>
+      return `<div class="suggest-item" data-id="${p.external_id}" style="display:flex;align-items:center">
+        <div style="flex:1;pointer-events:none">
+          <div class="s-name">${hi}</div>
+          <div class="s-meta">${esc(meta)}</div>
+        </div>
+        <button class="s-edit-btn" data-edit-id="${p.external_id}" title="制約を編集">✏️</button>
       </div>`;
     }).join('');
 
     sug.querySelectorAll('.suggest-item').forEach(el => {
+      // ✏️ ボタン：追加せずエディタを開く
+      const editBtn = el.querySelector('.s-edit-btn');
+      if (editBtn) {
+        editBtn.addEventListener('touchstart', e => { e.stopPropagation(); e.preventDefault(); }, { passive: false });
+        editBtn.addEventListener('touchend', e => {
+          e.stopPropagation(); e.preventDefault();
+          const p = patients.find(x => x.external_id === editBtn.dataset.editId);
+          if (p) openEditor(p);
+        });
+        editBtn.addEventListener('mousedown', e => e.stopPropagation());
+        editBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const p = patients.find(x => x.external_id === editBtn.dataset.editId);
+          if (p) openEditor(p);
+        });
+      }
+
+      // 患者行本体：リストに追加
       el.addEventListener('touchstart', e => { e.preventDefault(); selecting = true; }, { passive: false });
       el.addEventListener('touchend', e => {
         e.preventDefault();
@@ -414,7 +502,7 @@ function setupSearch() {
 
 /* ── 今日の訪問予定 ── */
 function addPatientToToday(p) {
-  const duration = extractDuration(p.memo_parsed);
+  const duration = extractDuration(p);
   todayList.push({ patient: p, duration });
   renderTodayList();
   // 結果カードはクリア
@@ -450,6 +538,7 @@ function renderTodayList() {
         <input class="dur-input" type="number" min="5" max="180" step="5" value="${t.duration}" onchange="updateDuration(${i}, this.value)">
         <div class="dur-label">分</div>
       </div>
+      <button class="edit-btn" onclick="openEditor(todayList[${i}].patient)" title="制約を編集">✏️</button>
       <button class="del-btn" onclick="removePatient(${i})">✕</button>
     </div>
   `).join('');
@@ -913,6 +1002,230 @@ function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
 
 function inAnyWindow(t, windows) {
   return windows.some(([s, e]) => t >= s && t < e);
+}
+
+/* ══════════════════════════════════════════════════════
+   患者制約エディタ
+══════════════════════════════════════════════════════ */
+let editorPatient = null;
+
+const WEEK_DAYS = ['月','火','水','木','金','土','日'];
+
+function openEditor(patient) {
+  editorPatient = patient;
+  const mp = patient.memo_parsed || {};
+
+  document.getElementById('ed-name').textContent = patient.name;
+  document.getElementById('ed-sub').textContent =
+    `ID: ${patient.external_id}　担当: ${patient.doctor || '未設定'}　${patient.address || ''}`;
+
+  /* ── 原文ブロック ── */
+  const memoRaw = patient.memo_raw ?? null;
+  const ctMemo  = patient.ct_memo  ?? null;
+
+  /* ── 曜日チェックボックス ── */
+  function dayChecksHTML(field, selected) {
+    return `<div class="day-checks">${WEEK_DAYS.map(d =>
+      `<label class="day-chk">
+        <input type="checkbox" data-field="${field}" value="${d}" ${(selected||[]).includes(d)?'checked':''}>
+        ${d}
+      </label>`).join('')}</div>`;
+  }
+
+  /* ── 時間帯リスト ── */
+  function winRowHTML(type, w) {
+    const dayOpts = [...WEEK_DAYS,'全'].map(d =>
+      `<option${w.day===d?' selected':''}>${d}</option>`).join('');
+    return `<div class="window-row">
+      <select class="wr-day">${dayOpts}</select>
+      <input class="wr-time" type="time" value="${w.start||'09:00'}">
+      <span style="font-size:11px;color:#94a3b8">〜</span>
+      <input class="wr-time" type="time" value="${w.end||'17:00'}">
+      <input class="wr-reason" type="text" placeholder="理由" value="${esc(w.reason||'')}">
+      <button class="win-del" onclick="this.closest('.window-row').remove()">✕</button>
+    </div>`;
+  }
+  function winsHTML(type, wins) {
+    return (wins||[]).map(w => winRowHTML(type, w)).join('');
+  }
+
+  document.getElementById('ed-body').innerHTML = `
+    <!-- 原文 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">原文</div>
+      <div class="raw-grid">
+        <div>
+          <div class="raw-label">CZ列（スケジュール備考）</div>
+          <div class="raw-text${memoRaw?'':' empty'}">${memoRaw ? esc(memoRaw) : '未登録'}</div>
+        </div>
+        <div>
+          <div class="raw-label">CT列（訪問頻度・その他）</div>
+          <div class="raw-text${ctMemo?'':' empty'}">${ctMemo ? esc(ctMemo) : '未登録'}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 基本設定 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">スケジュール制約</div>
+
+      <div class="edit-row">
+        <div class="edit-label">訪問可否</div>
+        <select class="edit-select" id="ef-available">
+          <option value="free"    ${mp.available==='free'   ?'selected':''}>終日可（制約なし）</option>
+          <option value="limited" ${mp.available==='limited'?'selected':''}>条件あり</option>
+          <option value="fixed"   ${mp.available==='fixed'  ?'selected':''}>固定（月1回等）</option>
+        </select>
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">不可曜日</div>
+        ${dayChecksHTML('ng_days', mp.ng_days)}
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">希望曜日</div>
+        ${dayChecksHTML('pref_days', mp.preferred_days)}
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">時間帯希望</div>
+        <select class="edit-select" id="ef-pref-time">
+          <option value="any"       ${mp.preferred_time==='any'      ?'selected':''}>指定なし</option>
+          <option value="morning"   ${mp.preferred_time==='morning'  ?'selected':''}>午前希望</option>
+          <option value="afternoon" ${mp.preferred_time==='afternoon'?'selected':''}>午後希望</option>
+          <option value="before11"  ${mp.preferred_time==='before11' ?'selected':''}>11時までに終了</option>
+          <option value="after14"   ${mp.preferred_time==='after14'  ?'selected':''}>14時以降</option>
+        </select>
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">固定時刻</div>
+        <input class="edit-input-text" type="time" id="ef-fixed-time" value="${mp.fixed_time||''}">
+        <span style="font-size:11px;color:#94a3b8">（毎回この時刻）</span>
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">訪問パターン</div>
+        <input class="edit-input-text" type="text" id="ef-week-pattern"
+          value="${esc(mp.week_pattern||'')}" placeholder="例: 第3金、隔週木" style="width:180px">
+      </div>
+    </div>
+
+    <!-- NG時間帯 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">NG時間帯</div>
+      <div class="windows-list" id="ng-list">${winsHTML('ng', mp.ng_windows)}</div>
+      <button class="win-add-btn" onclick="addWinRow('ng-list')">＋ NG時間帯を追加</button>
+    </div>
+
+    <!-- OK時間帯 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">OK時間帯（この時間のみ可、の場合）</div>
+      <div class="windows-list" id="ok-list">${winsHTML('ok', mp.ok_windows)}</div>
+      <button class="win-add-btn" onclick="addWinRow('ok-list')">＋ OK時間帯を追加</button>
+    </div>
+
+    <!-- メモ -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">メモ・備考</div>
+      <textarea class="notes-ta" id="ef-notes">${esc(mp.notes||'')}</textarea>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="ef-needs-review" ${mp.needs_review?'checked':''}
+          style="accent-color:#c53030;width:16px;height:16px">
+        <span style="color:#c53030;font-weight:700">⚠️ 要確認フラグ</span>
+      </label>
+    </div>
+  `;
+
+  document.getElementById('editor-overlay').style.display = 'flex';
+}
+
+function closeEditor() {
+  document.getElementById('editor-overlay').style.display = 'none';
+  editorPatient = null;
+}
+
+function editorBgClick(e) {
+  if (e.target === document.getElementById('editor-overlay')) closeEditor();
+}
+
+function addWinRow(listId) {
+  const list = document.getElementById(listId);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = `<div class="window-row">
+    <select class="wr-day">${[...WEEK_DAYS,'全'].map(d=>`<option>${d}</option>`).join('')}</select>
+    <input class="wr-time" type="time" value="09:00">
+    <span style="font-size:11px;color:#94a3b8">〜</span>
+    <input class="wr-time" type="time" value="10:00">
+    <input class="wr-reason" type="text" placeholder="理由">
+    <button class="win-del" onclick="this.closest('.window-row').remove()">✕</button>
+  </div>`;
+  list.appendChild(tmp.firstChild);
+}
+
+function collectChecks(field) {
+  return Array.from(document.querySelectorAll(`input[data-field="${field}"]:checked`))
+    .map(cb => cb.value);
+}
+
+function collectWins(listId) {
+  return Array.from(document.querySelectorAll(`#${listId} .window-row`)).map(row => {
+    const [dayEl] = row.querySelectorAll('.wr-day');
+    const times = row.querySelectorAll('.wr-time');
+    const reasonEl = row.querySelector('.wr-reason');
+    const obj = { day: dayEl.value, start: times[0].value, end: times[1].value };
+    const r = reasonEl.value.trim();
+    if (r) obj.reason = r;
+    return obj;
+  }).filter(w => w.start && w.end);
+}
+
+async function saveEditor() {
+  if (!editorPatient) return;
+  const btn = document.getElementById('ed-save-btn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    const fixedTime = document.getElementById('ef-fixed-time').value || null;
+    const newParsed = {
+      available:      document.getElementById('ef-available').value,
+      ng_days:        collectChecks('ng_days'),
+      preferred_days: collectChecks('pref_days'),
+      preferred_time: document.getElementById('ef-pref-time').value,
+      fixed_time:     fixedTime,
+      week_pattern:   document.getElementById('ef-week-pattern').value.trim() || null,
+      ng_windows:     collectWins('ng-list'),
+      ok_windows:     collectWins('ok-list'),
+      notes:          document.getElementById('ef-notes').value.trim(),
+      needs_review:   document.getElementById('ef-needs-review').checked || undefined
+    };
+    if (!newParsed.needs_review) delete newParsed.needs_review;
+
+    const { error } = await db.from('scheduler_patients')
+      .update({ memo_parsed: newParsed })
+      .eq('external_id', editorPatient.external_id);
+    if (error) throw error;
+
+    // ローカルキャッシュを更新
+    const idx = patients.findIndex(p => p.external_id === editorPatient.external_id);
+    if (idx >= 0) patients[idx].memo_parsed = newParsed;
+    editorPatient.memo_parsed = newParsed;
+    renderTodayList();
+    closeEditor();
+    showToast('✅ 保存しました');
+  } catch (e) {
+    alert('保存に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '保存';
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast-msg');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.style.opacity = '0'; }, 2500);
 }
 
 /* ── 結果描画 ── */
