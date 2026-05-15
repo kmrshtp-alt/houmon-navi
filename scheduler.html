@@ -65,7 +65,10 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 /* ── 訪問予定リスト ── */
 .visit-list{margin-top:4px}
-.visit-item{display:grid;grid-template-columns:32px 1fr 110px 32px 32px;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.visit-item{display:block;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.visit-item-top{display:flex;align-items:center;gap:10px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.visit-item-top:active{opacity:0.7}
+.visit-item-bottom{display:flex;align-items:center;gap:8px;margin-top:7px;padding-left:40px}
 .visit-item:last-child{border-bottom:none}
 .visit-num{width:30px;height:30px;border-radius:50%;background:#1e3d6e;color:white;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .visit-info{min-width:0}
@@ -121,7 +124,6 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
   .raw-grid{grid-template-columns:1fr}
   #editor-overlay{padding:0;align-items:flex-end}
   #editor-modal{border-radius:16px 16px 0 0;max-height:92vh}
-  .visit-item{grid-template-columns:28px 1fr 80px 28px 28px;gap:6px}
 }
 
 .empty-msg{padding:30px 16px;text-align:center;color:#94a3b8;font-size:13px}
@@ -391,13 +393,25 @@ function condSummary(memo_parsed) {
   if (!memo_parsed) return '<span style="color:#94a3b8">制約なし</span>';
   const parts = [];
   if (memo_parsed.available === 'free') return '<span style="color:#94a3b8">終日可</span>';
-  if (memo_parsed.fixed_time) parts.push(`<span class="fixed">⭐ ${memo_parsed.fixed_time} 固定</span>`);
+  if (memo_parsed.fixed_time) parts.push(`<span class="fixed">⭐ ${memo_parsed.fixed_time}固定</span>`);
   if (memo_parsed.ng_days && memo_parsed.ng_days.length) parts.push(`<span class="ng">${memo_parsed.ng_days.join('')}不可</span>`);
   if (memo_parsed.preferred_days && memo_parsed.preferred_days.length) parts.push(`${memo_parsed.preferred_days.join('')}希望`);
   if (memo_parsed.preferred_time === 'morning') parts.push('午前希望');
   else if (memo_parsed.preferred_time === 'afternoon') parts.push('午後希望');
   else if (memo_parsed.preferred_time === 'before11') parts.push('11時まで');
   else if (memo_parsed.preferred_time === 'after14') parts.push('14時以降');
+  // NG時間帯・OK時間帯も表示
+  const ngw = memo_parsed.ng_windows || [];
+  const okw = memo_parsed.ok_windows || [];
+  if (ngw.length) {
+    const uniq = [...new Set(ngw.map(w => w.day === '全' ? '全日' : w.day))].join('');
+    parts.push(`<span class="ng">NG枠${ngw.length}件(${uniq})</span>`);
+  }
+  if (okw.length) {
+    const sample = okw[0];
+    parts.push(`${sample.day === '全' ? '全日' : sample.day}${sample.start}〜のみ可`);
+  }
+  if (memo_parsed.week_pattern) parts.push(memo_parsed.week_pattern);
   if (memo_parsed.needs_review) parts.push('<span class="ng">⚠️要確認</span>');
   return parts.length ? parts.join(' / ') : '<span style="color:#94a3b8">制約なし</span>';
 }
@@ -529,17 +543,20 @@ function renderTodayList() {
   }
   list.innerHTML = todayList.map((t, i) => `
     <div class="visit-item">
-      <div class="visit-num">${i + 1}</div>
-      <div class="visit-info">
-        <div class="visit-name">${esc(t.patient.name)} <span style="font-size:11px;color:#64748b;font-weight:400">${esc(t.patient.doctor || '')}</span></div>
-        <div class="visit-cond">${condSummary(t.patient.memo_parsed)}</div>
+      <div class="visit-item-top" onclick="openEditor(todayList[${i}].patient)">
+        <div class="visit-num">${i + 1}</div>
+        <div class="visit-info" style="flex:1;min-width:0">
+          <div class="visit-name">${esc(t.patient.name)} <span style="font-size:11px;color:#64748b;font-weight:400">${esc(t.patient.doctor || '')}</span></div>
+          <div class="visit-cond">${condSummary(t.patient.memo_parsed)}</div>
+        </div>
+        <span style="font-size:16px;color:#94a3b8;flex-shrink:0">›</span>
       </div>
-      <div>
-        <input class="dur-input" type="number" min="5" max="180" step="5" value="${t.duration}" onchange="updateDuration(${i}, this.value)">
+      <div class="visit-item-bottom">
+        <input class="dur-input" type="number" min="5" max="180" step="5" value="${t.duration}"
+          onchange="updateDuration(${i}, this.value)" style="width:70px">
         <div class="dur-label">分</div>
+        <button class="del-btn" onclick="removePatient(${i})" style="margin-left:auto">✕</button>
       </div>
-      <button class="edit-btn" onclick="openEditor(todayList[${i}].patient)" title="制約を編集">✏️</button>
-      <button class="del-btn" onclick="removePatient(${i})">✕</button>
     </div>
   `).join('');
 }
