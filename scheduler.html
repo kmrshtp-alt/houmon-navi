@@ -1310,6 +1310,20 @@ async function saveEditor() {
     editorPatient.memo_parsed = newParsed;
     renderTodayList();
     closeEditor();
+
+    // 結果カードが表示中なら「再計算してください」バナーを出す
+    const rc = document.getElementById('result-card');
+    if (rc.style.display !== 'none') {
+      const existing = document.getElementById('recalc-banner');
+      if (!existing) {
+        const banner = document.createElement('div');
+        banner.id = 'recalc-banner';
+        banner.style.cssText = 'background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 16px;font-size:13px;color:#92400e;display:flex;align-items:center;gap:10px';
+        banner.innerHTML = '⚠️ 制約を変更しました。結果が古い可能性があります。&nbsp;<button onclick="document.getElementById(\'recalc-banner\').remove();optimize()" style="background:#f59e0b;color:white;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">再計算する</button><button onclick="document.getElementById(\'recalc-banner\').remove()" style="background:none;border:none;color:#92400e;cursor:pointer;font-size:16px;margin-left:auto">✕</button>';
+        rc.insertAdjacentElement('afterbegin', banner);
+      }
+    }
+
     showToast('✅ 保存しました');
   } catch (e) {
     alert('保存に失敗しました: ' + e.message);
