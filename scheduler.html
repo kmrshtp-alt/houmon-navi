@@ -415,8 +415,13 @@ function condSummary(memo_parsed) {
     parts.push(`<span class="ng">NG枠${ngw.length}件(${uniq})</span>`);
   }
   if (okw.length) {
-    const sample = okw[0];
-    parts.push(`${sample.day === '全' ? '全日' : sample.day}${sample.start}〜のみ可`);
+    // 全OKウィンドウを表示（例: 全日09:00〜11:00 / 16:30〜）
+    const okStrs = okw.map(w => {
+      const dayLabel = w.day === '全' ? '全日' : w.day;
+      const endLabel = w.end && w.end !== '23:59' ? `〜${w.end}` : '〜';
+      return `${dayLabel}${w.start}${endLabel}`;
+    });
+    parts.push(`${okStrs.join(' / ')}のみ可`);
   }
   if (memo_parsed.week_pattern) parts.push(memo_parsed.week_pattern);
   if (memo_parsed.needs_review) parts.push('<span class="ng">⚠️要確認</span>');
