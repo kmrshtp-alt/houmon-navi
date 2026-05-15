@@ -415,7 +415,9 @@ function condSummary(memo_parsed) {
     parts.push(`<span class="ng">NG枠${ngw.length}件(${uniq})</span>`);
   }
   if (okw.length) {
-    // 曜日ごとにグループ化して表示（例: 全日09:00〜11:00・16:30〜のみ）
+    // 曜日ごとにグループ化して表示
+    // 1枠のみ → 「全日09:00〜11:00のみ」
+    // 複数枠  → 「全日09:00〜11:00・16:30〜可」
     const byDay = {};
     for (const w of okw) {
       const d = w.day === '全' ? '全日' : w.day;
@@ -423,8 +425,10 @@ function condSummary(memo_parsed) {
       const end = w.end && w.end !== '23:59' ? `〜${w.end}` : '〜';
       byDay[d].push(`${w.start}${end}`);
     }
+    const totalWindows = okw.length;
     const okStrs = Object.entries(byDay).map(([d, times]) => `${d}${times.join('・')}`);
-    parts.push(`${okStrs.join('、')}のみ`);
+    const suffix = totalWindows === 1 ? 'のみ' : '可';
+    parts.push(`${okStrs.join('、')}${suffix}`);
   }
   if (memo_parsed.week_pattern) parts.push(memo_parsed.week_pattern);
   if (memo_parsed.needs_review) parts.push('<span class="ng">⚠️要確認</span>');
