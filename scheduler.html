@@ -1295,8 +1295,8 @@ async function saveEditor() {
       preferred_time: document.getElementById('ef-pref-time').value,
       fixed_time:     fixedTime,
       week_pattern:   document.getElementById('ef-week-pattern').value.trim() || null,
-      ng_windows:     collectWins('ng-list'),
-      ok_windows:     collectWins('ok-list'),
+      ng_windows:     collectWins('ng-list').sort((a,b) => a.start.localeCompare(b.start)),
+      ok_windows:     collectWins('ok-list').sort((a,b) => a.start.localeCompare(b.start)),
       notes:          document.getElementById('ef-notes').value.trim(),
       needs_review:   document.getElementById('ef-needs-review').checked || undefined
     };
