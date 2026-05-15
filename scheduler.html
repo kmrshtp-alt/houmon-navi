@@ -1251,7 +1251,66 @@ function openEditor(patient) {
     </div>
   `;
 
+  // ── 矛盾チェック ──
+  const conflicts = detectWindowConflicts(mp);
+  if (conflicts.length) {
+    const msgs = conflicts.map(c => `<li>${c}</li>`).join('');
+    const banner = `<div style="background:#fff0f0;border-left:4px solid #c53030;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;color:#c53030">
+      <div style="font-weight:700;margin-bottom:4px">⚠️ 時間設定に矛盾があります</div>
+      <ul style="margin:0;padding-left:18px;line-height:1.8">${msgs}</ul>
+    </div>`;
+    document.getElementById('ed-body').innerHTML = banner + document.getElementById('ed-body').innerHTML;
+  }
+
   document.getElementById('editor-overlay').style.display = 'flex';
+}
+
+/* OK枠とNG枠の矛盾を検出して説明文リストを返す */
+function detectWindowConflicts(mp) {
+  const toMin = s => { const [h,m]=(s||'00:00').split(':').map(Number); return h*60+m; };
+  const ok = mp.ok_windows || [];
+  const ng = mp.ng_windows || [];
+  const msgs = [];
+
+  for (const okw of ok) {
+    const os = toMin(okw.start);
+    const oe = toMin(okw.end === '23:59' ? '23:59' : (okw.end || '23:59'));
+    const killers = ng.filter(ngw => {
+      // 曜日が合致するか
+      const dayMatch = ngw.day === okw.day || ngw.day === '全' || okw.day === '全';
+      if (!dayMatch) return false;
+      // OK枠がNG枠に完全に含まれるか
+      return toMin(ngw.start) <= os && toMin(ngw.end) >= oe;
+    });
+    if (killers.length) {
+      const dayLabel = okw.day === '全' ? '全日' : `${okw.day}曜`;
+      const ngDesc = killers.map(n => `${n.day === '全' ? '全日' : n.day+'曜'}${n.start}〜${n.end}${n.reason ? `（${n.reason}）` : ''}`).join('、');
+      msgs.push(`${dayLabel}${okw.start}〜${okw.end} のOK枠が、NG枠「${ngDesc}」に完全に含まれています`);
+    }
+  }
+
+  // OK枠があるのに実質0分になる曜日も検出
+  const days = ['月','火','水','木','金','土','日','全'];
+  for (const d of days) {
+    const okForDay = ok.filter(w => w.day === d || w.day === '全');
+    if (!okForDay.length) continue;
+    // その曜日の実効ウィンドウを計算
+    const wins = detectWindowConflicts._calcWins ? detectWindowConflicts._calcWins(d, ok, ng) : null;
+    // 簡易チェック：全OK枠がNGで消えているか
+    const allKilled = okForDay.every(okw => {
+      const os = toMin(okw.start), oe = toMin(okw.end === '23:59' ? '23:59' : (okw.end||'23:59'));
+      return ng.some(ngw => {
+        const dm = ngw.day === d || ngw.day === '全' || d === '全';
+        return dm && toMin(ngw.start) <= os && toMin(ngw.end) >= oe;
+      });
+    });
+    if (allKilled && !msgs.some(m => m.includes(`${d === '全' ? '全日' : d+'曜'}`))) {
+      const dLabel = d === '全' ? '全日' : `${d}曜`;
+      msgs.push(`${dLabel}はOK枠が全てNG枠と重なっており、訪問可能な時間帯がありません`);
+    }
+  }
+
+  return [...new Set(msgs)]; // 重複除去
 }
 
 function closeEditor() {
