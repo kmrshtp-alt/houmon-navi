@@ -281,7 +281,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
     <div class="card-header">本日の訪問予定</div>
     <div class="card-body">
       <div class="search-wrap">
-        <input class="search-input" id="search-input" type="text" placeholder="患者名 / ふりがなで検索..." autocomplete="off">
+        <input class="search-input" id="search-input" type="text" placeholder="患者名 / ふりがな / ID で検索..." autocomplete="off">
         <div class="suggest-list" id="suggest-list"></div>
       </div>
 
@@ -422,7 +422,8 @@ function normalizeQuery(q) {
 function matchPatient(p, q) {
   const nq = normalizeQuery(q);
   return normalizeQuery(p.name).includes(nq) ||
-         (p.furigana && normalizeQuery(p.furigana).includes(nq));
+         (p.furigana && normalizeQuery(p.furigana).includes(nq)) ||
+         (p.external_id && String(p.external_id).includes(q.trim()));
 }
 
 function getDayName(dateStr) {
@@ -509,10 +510,12 @@ function setupSearch() {
 
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(new RegExp(esc(q), 'gi'), m => `<mark>${m}</mark>`);
-      const meta = [p.furigana || '', p.doctor || '', p.address || ''].filter(Boolean).join(' / ');
+      const idStr = p.external_id ? String(p.external_id) : '';
+      const idHi = idStr ? idStr.replace(new RegExp(esc(q.trim()), 'g'), m => `<mark>${m}</mark>`) : '';
+      const meta = [p.furigana || '', p.address || ''].filter(Boolean).join(' / ');
       return `<div class="suggest-item" data-id="${p.external_id}" style="display:flex;align-items:center">
         <div style="flex:1;pointer-events:none">
-          <div class="s-name">${hi}</div>
+          <div class="s-name">${hi}${idHi ? `<span style="font-size:11px;color:#94a3b8;margin-left:6px">ID: ${idHi}</span>` : ''}</div>
           <div class="s-meta">${esc(meta)}</div>
         </div>
         <button class="s-edit-btn" data-edit-id="${p.external_id}" title="制約を編集">✏️</button>
