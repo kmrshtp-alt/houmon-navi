@@ -2063,7 +2063,7 @@ async function gcpCodeVerifierToChallenge(verifier) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-/* OAuth 認可 URL への遷移 */
+/* OAuth 認可 URL への遷移（ポップアップ方式 → ページ遷移なし） */
 async function gcpStartOAuth() {
   const verifier = gcpGenerateCodeVerifier();
   const challenge = await gcpCodeVerifierToChallenge(verifier);
@@ -2077,8 +2077,38 @@ async function gcpStartOAuth() {
     code_challenge_method: 'S256',
     access_type: 'offline',
     prompt: 'consent',
+    state: 'gcp_monitoring_oauth',  // GCP OAuth と識別するための state
   });
-  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+
+  // ポップアップで開く（メインページから離れない）
+  const popup = window.open(authUrl, 'gcp_oauth_popup', 'width=520,height=640,scrollbars=yes,resizable=yes');
+  if (!popup) {
+    // ポップアップブロック時はフォールバック（ページ遷移）
+    window.location.href = authUrl;
+    return;
+  }
+
+  // ポップアップから code をメッセージで受け取る
+  const timer = setTimeout(() => window.removeEventListener('message', handler), 300000);
+  async function handler(e) {
+    if (e.data?.type !== 'gcp_oauth_code' || !e.data?.code) return;
+    clearTimeout(timer);
+    window.removeEventListener('message', handler);
+    popup.close();
+    try {
+      const tokenObj = await gcpExchangeCode(e.data.code);
+      await gcpSaveToken(tokenObj);
+      showToast('✅ Google 認証が完了しました');
+      const el = document.getElementById('maps-usage');
+      if (el) { el.dataset.gcpLoggedIn = 'true'; }
+      await gcpRefreshUsageDisplay();
+    } catch(err) {
+      console.error('OAuth コード交換失敗:', err);
+      showToast('⚠️ Google 認証に失敗しました: ' + err.message);
+    }
+  }
+  window.addEventListener('message', handler);
 }
 
 /* 認可コード → トークン交換 */
@@ -2243,16 +2273,27 @@ async function gcpRefreshUsageDisplay() {
 async function gcpHandleRedirectCode() {
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get('code');
-  if (!code) return;
-  // URL から code を除去
+  const state = urlParams.get('state');
+  // GCP OAuth のコールバックかどうか判定
+  if (!code || state !== 'gcp_monitoring_oauth') return;
+
+  // URL から code/state を除去
   history.replaceState({}, document.title, window.location.pathname);
+
+  // ★ポップアップ内にいる場合 → 親ウィンドウにコードを送って閉じる
+  if (window.opener) {
+    window.opener.postMessage({ type: 'gcp_oauth_code', code }, '*');
+    setTimeout(() => window.close(), 300);
+    return;
+  }
+
+  // フォールバック：ポップアップブロックでページ遷移した場合
   try {
     const tokenObj = await gcpExchangeCode(code);
     await gcpSaveToken(tokenObj);
     showToast('✅ Google 認証が完了しました');
     const el = document.getElementById('maps-usage');
     if (el) { el.dataset.gcpLoggedIn = 'true'; }
-    // 即座に使用量を取得
     await gcpRefreshUsageDisplay();
   } catch(e) {
     console.error('OAuth コード交換失敗:', e);
