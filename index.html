@@ -4,6 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>訪問診療ナビ</title>
+<script>
+// GCP OAuth コードが来たら scheduler.html に転送（Supabase 等の読込より先に実行）
+(function(){
+  try {
+    var sp = new URLSearchParams(window.location.search);
+    var state = sp.get('state') || '';
+    if (sp.get('code') && state.indexOf('gcp_monitoring_oauth:') === 0) {
+      window.location.replace('scheduler.html' + window.location.search);
+    }
+  } catch(e) {}
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
