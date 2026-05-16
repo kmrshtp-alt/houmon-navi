@@ -252,7 +252,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 <!-- ヘッダ -->
 <header>
-  <div class="brand">🚗 訪問スケジューラ <span style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:4px">v1.1.4</span> <a href="index.html">▶ 訪問診療ナビへ</a></div>
+  <div class="brand">🚗 訪問スケジューラ <span style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:4px">v1.1.5</span> <a href="index.html">▶ 訪問診療ナビへ</a></div>
   <div class="status"><div class="status-dot" id="status-dot"></div><span id="status-text">読込中…</span></div>
   <span id="save-status" style="font-size:11px;color:#94a3b8"></span>
 </header>
@@ -850,6 +850,45 @@ function waitForGMaps(timeout = 15000) {
   });
 }
 
+/* ── Distance Cache（地点間距離の永続キャッシュ） ── */
+async function loadDistanceCache(pairs) {
+  // pairs: [{origin, destination}] → Map<"origin\x00dest", minutes>
+  if (!pairs.length) return new Map();
+  const origins = [...new Set(pairs.map(p => p.origin))];
+  const dests   = [...new Set(pairs.map(p => p.destination))];
+  try {
+    const { data, error } = await db
+      .from('distance_cache')
+      .select('origin, destination, minutes')
+      .in('origin', origins)
+      .in('destination', dests);
+    if (error) throw error;
+    const pairSet = new Set(pairs.map(p => p.origin + '\x00' + p.destination));
+    const map = new Map();
+    for (const row of (data || [])) {
+      const key = row.origin + '\x00' + row.destination;
+      if (pairSet.has(key)) map.set(key, row.minutes);
+    }
+    return map;
+  } catch (e) {
+    console.warn('distance_cache load failed:', e);
+    return new Map();
+  }
+}
+
+async function saveDistanceCache(entries) {
+  // entries: [{origin, destination, minutes}]
+  if (!entries.length) return;
+  try {
+    const { error } = await db
+      .from('distance_cache')
+      .upsert(entries, { onConflict: 'origin,destination' });
+    if (error) throw error;
+  } catch (e) {
+    console.warn('distance_cache save failed:', e);
+  }
+}
+
 /* ── Google Maps API 使用量管理（Supabase 永続化） ── */
 const MAPS_FREE_LIMIT = 40000; // $200クレジット ÷ $5/1000要素 = 40,000要素/月
 let mapsUsedCache = 0; // in-memory キャッシュ（同期読み取り用）
@@ -910,57 +949,102 @@ async function fetchDistanceMatrix(locations) {
     return fallbackDistanceMatrix(locations);
   }
 
-  // 無料枠チェック（40,000要素/月）
-  const elements = locations.length * locations.length;
-  if (getMapsUsed() + elements > MAPS_FREE_LIMIT) {
+  const addresses = locations.map(l => l.address);
+  const n = addresses.length;
+
+  // ── 1. キャッシュ読み込み ──
+  const allPairs = [];
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++)
+      if (i !== j) allPairs.push({ origin: addresses[i], destination: addresses[j] });
+
+  const cached = await loadDistanceCache(allPairs);
+
+  // ── 2. 行列をキャッシュで初期化 ──
+  const matrix = Array.from({ length: n }, () => Array(n).fill(0));
+  for (const { origin, destination } of allPairs) {
+    const key = origin + '\x00' + destination;
+    if (cached.has(key)) {
+      matrix[addresses.indexOf(origin)][addresses.indexOf(destination)] = cached.get(key);
+    }
+  }
+
+  // ── 3. 全キャッシュヒットならAPIコールなし ──
+  const uncachedPairs = allPairs.filter(p => !cached.has(p.origin + '\x00' + p.destination));
+  if (uncachedPairs.length === 0) {
+    console.log('🎯 Distance Matrix: 全キャッシュヒット（APIコールなし）');
+    return matrix;
+  }
+
+  // ── 4. 未キャッシュをoriginごとにグループ化し最小APIコールを計算 ──
+  const originToUncachedDests = new Map();
+  for (const { origin, destination } of uncachedPairs) {
+    if (!originToUncachedDests.has(origin)) originToUncachedDests.set(origin, []);
+    originToUncachedDests.get(origin).push(destination);
+  }
+  // 同じ未キャッシュdestセットのoriginsをまとめて1回のAPIコールに
+  const groups = new Map();
+  for (const [origin, dests] of originToUncachedDests) {
+    const key = JSON.stringify([...dests].sort());
+    if (!groups.has(key)) groups.set(key, { origins: [], dests });
+    groups.get(key).origins.push(origin);
+  }
+
+  // ── 5. 課金要素数チェック ──
+  let totalElements = 0;
+  for (const { origins, dests } of groups.values()) totalElements += origins.length * dests.length;
+
+  if (getMapsUsed() + totalElements > MAPS_FREE_LIMIT) {
     const used = getMapsUsed();
-    const remaining = getMapsRemaining();
     throw new Error(
       `Google Maps の無料枠上限に達したため実行できません。\n` +
-      `今月使用済み: ${used.toLocaleString()} 要素 / 残り: ${remaining.toLocaleString()} 要素\n` +
-      `（今回必要: ${elements} 要素）`
+      `今月使用済み: ${used.toLocaleString()} 要素 / 残り: ${getMapsRemaining().toLocaleString()} 要素\n` +
+      `（今回必要: ${totalElements} 要素）`
     );
   }
 
-  // DistanceMatrixService はアドレス文字列を直接受け付ける（内部でジオコード）
-  const addresses = locations.map(l => l.address);
+  const cacheHits = allPairs.length - uncachedPairs.length;
+  console.log(`📡 Distance Matrix: キャッシュ ${cacheHits}/${allPairs.length}件ヒット → API ${totalElements}要素（${groups.size}リクエスト）`);
+
+  // ── 6. グループごとにAPIコール ──
   const service = new google.maps.DistanceMatrixService();
+  const avoidTolls = document.getElementById('avoid-tolls')?.checked ?? true;
+  const newEntries = [];
 
   try {
-    const response = await new Promise((resolve, reject) => {
-      const avoidTolls = document.getElementById('avoid-tolls')?.checked ?? true;
-      service.getDistanceMatrix({
-        origins: addresses,
-        destinations: addresses,
-        travelMode: google.maps.TravelMode.DRIVING,
-        unitSystem: google.maps.UnitSystem.METRIC,
-        language: 'ja',
-        avoidTolls: avoidTolls,
-      }, (resp, status) => {
-        if (status === google.maps.DistanceMatrixStatus.OK) {
-          resolve(resp);
-        } else {
-          reject(new Error('DistanceMatrixService error: ' + status));
-        }
+    for (const { origins: apiOrigins, dests: apiDests } of groups.values()) {
+      const response = await new Promise((resolve, reject) => {
+        service.getDistanceMatrix({
+          origins: apiOrigins,
+          destinations: apiDests,
+          travelMode: google.maps.TravelMode.DRIVING,
+          unitSystem: google.maps.UnitSystem.METRIC,
+          language: 'ja',
+          avoidTolls,
+        }, (resp, status) => {
+          status === google.maps.DistanceMatrixStatus.OK
+            ? resolve(resp) : reject(new Error('DistanceMatrixService error: ' + status));
+        });
       });
-    });
 
-    const n = locations.length;
-    const matrix = [];
-    for (let i = 0; i < n; i++) {
-      matrix[i] = [];
-      for (let j = 0; j < n; j++) {
-        if (i === j) { matrix[i][j] = 0; continue; }
-        const el = response.rows[i].elements[j];
-        if (el.status === 'OK' && el.duration) {
-          matrix[i][j] = Math.ceil(el.duration.value / 60);  // 秒 → 分（切り上げ）
-        } else {
-          console.warn(`距離取得失敗 [${i}→${j}]`, el.status, addresses[i], '→', addresses[j]);
-          matrix[i][j] = 15;  // 取得失敗分のみ 15 分デフォルト
+      for (let oi = 0; oi < apiOrigins.length; oi++) {
+        const origAddr = apiOrigins[oi];
+        const i = addresses.indexOf(origAddr);
+        for (let di = 0; di < apiDests.length; di++) {
+          const destAddr = apiDests[di];
+          const j = addresses.indexOf(destAddr);
+          const el = response.rows[oi].elements[di];
+          const mins = (el.status === 'OK' && el.duration)
+            ? Math.ceil(el.duration.value / 60) : 15;
+          if (i !== -1 && j !== -1) matrix[i][j] = mins;
+          newEntries.push({ origin: origAddr, destination: destAddr, minutes: mins });
         }
       }
     }
-    await addMapsUsed(elements);
+
+    // ── 7. キャッシュ保存・使用量更新 ──
+    await saveDistanceCache(newEntries);
+    await addMapsUsed(totalElements);
     updateMapsUsageDisplay();
     return matrix;
 
