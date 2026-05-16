@@ -983,6 +983,7 @@ async function optimize() {
     // 距離行列取得（CLINIC を index 0、残りを 1..N）
     const locations = [CLINIC, ...todayList.map(t => t.patient)];
     const matrix = await fetchDistanceMatrix(locations);
+    distanceCache = matrix;
 
     // 各患者の利用可能時間帯
     const overrides = loadOverrides();
@@ -1299,8 +1300,8 @@ function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
     const tScore = lunchTimingScore(res.lunchStart, cfg.lunchDuration);
     if (tScore === Infinity) continue;  // 11〜14時の範囲外 → スキップ
 
-    // 複合スコア：制約違反 >> 帰着遅れ >> 昼のタイミング
-    const score = res.infeasibleCount * 100000 + res.lateMin * 1000 + tScore;
+    // 複合スコア：制約違反 >> 帰着遅れ >> 総移動時間 >> 昼のタイミング（軽微）
+    const score = res.infeasibleCount * 100000 + res.lateMin * 1000 + res.totalTravel + tScore * 0.1;
     if (score < bestScore) { bestScore = score; bestResult = res; }
   }
 
