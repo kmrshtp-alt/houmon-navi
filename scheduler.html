@@ -481,6 +481,7 @@ async function init() {
   setupSearch();
   renderTodayList();
   await loadMapsUsage();
+  await gcpInitDisplay();
   buildDoctorSelect();
 }
 
@@ -899,15 +900,6 @@ async function addMapsUsed(n) {
 function getMapsRemaining() {
   return Math.max(0, MAPS_FREE_LIMIT - getMapsUsed());
 }
-function updateMapsUsageDisplay() {
-  const el = document.getElementById('maps-usage');
-  if (!el) return;
-  const used = getMapsUsed();
-  const pct = Math.min(100, Math.round(used / MAPS_FREE_LIMIT * 100));
-  const color = pct >= 90 ? '#c53030' : pct >= 70 ? '#92400e' : '#1a6b40';
-  el.innerHTML = `Google Maps 今月: <span style="color:${color};font-weight:700">${used.toLocaleString()} / ${MAPS_FREE_LIMIT.toLocaleString()} 要素（${pct}%）</span>`;
-}
-
 /* ── 距離行列取得（JS SDK の DistanceMatrixService を使用） ── */
 async function fetchDistanceMatrix(locations) {
   // locations: [{address, lat?, lng?}, ...]  クリニックが index 0
@@ -2047,8 +2039,232 @@ async function cancelPatientFromResult(externalId) {
   }
 }
 
+/* ── Google Cloud Monitoring API 連携（Distance Matrix 実使用量取得） ── */
+const GCP_PROJECT = 'houmon-navi-scheduler';
+const GCP_CLIENT_ID = '978633506719-neerlkj1dhk4u2ea9d2iuomdba8948gb.apps.googleusercontent.com';
+const GCP_REDIRECT_URI = 'https://kmrshtp-alt.github.io/houmon-navi/';
+const GCP_SCOPE = 'https://www.googleapis.com/auth/monitoring.read';
+const GCP_TOKEN_KEY = 'gcp_oauth_token';
+
+/* PKCE ユーティリティ */
+function gcpGenerateCodeVerifier() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let v = '';
+  const arr = new Uint8Array(128);
+  crypto.getRandomValues(arr);
+  arr.forEach(b => { v += chars[b % chars.length]; });
+  return v;
+}
+
+async function gcpCodeVerifierToChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/* OAuth 認可 URL への遷移 */
+async function gcpStartOAuth() {
+  const verifier = gcpGenerateCodeVerifier();
+  const challenge = await gcpCodeVerifierToChallenge(verifier);
+  sessionStorage.setItem('gcp_pkce_verifier', verifier);
+  const params = new URLSearchParams({
+    client_id: GCP_CLIENT_ID,
+    redirect_uri: GCP_REDIRECT_URI,
+    response_type: 'code',
+    scope: GCP_SCOPE,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    access_type: 'offline',
+    prompt: 'consent',
+  });
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+}
+
+/* 認可コード → トークン交換 */
+async function gcpExchangeCode(code) {
+  const verifier = sessionStorage.getItem('gcp_pkce_verifier');
+  if (!verifier) throw new Error('PKCE verifier が見つかりません');
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: GCP_CLIENT_ID,
+      redirect_uri: GCP_REDIRECT_URI,
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: verifier,
+    }).toString(),
+  });
+  if (!resp.ok) throw new Error('トークン交換失敗: ' + (await resp.text()));
+  const json = await resp.json();
+  sessionStorage.removeItem('gcp_pkce_verifier');
+  return json;
+}
+
+/* トークン保存 */
+async function gcpSaveToken(tokenObj) {
+  tokenObj.expires_at = Date.now() + (tokenObj.expires_in || 3600) * 1000;
+  await db.from('app_settings').upsert(
+    { key: GCP_TOKEN_KEY, value: JSON.stringify(tokenObj), updated_at: new Date().toISOString() },
+    { onConflict: 'key' }
+  );
+}
+
+/* トークン読み込み */
+async function gcpLoadToken() {
+  try {
+    const { data } = await db.from('app_settings').select('value').eq('key', GCP_TOKEN_KEY).maybeSingle();
+    if (data?.value) return JSON.parse(data.value);
+  } catch(e) { /* ignore */ }
+  return null;
+}
+
+/* トークンリフレッシュ */
+async function gcpRefreshToken(refreshToken) {
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: GCP_CLIENT_ID,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }).toString(),
+  });
+  if (!resp.ok) throw new Error('トークンリフレッシュ失敗: ' + (await resp.text()));
+  return await resp.json();
+}
+
+/* 有効なアクセストークンを取得（期限切れなら自動更新） */
+async function gcpGetAccessToken() {
+  let token = await gcpLoadToken();
+  if (!token) return null;
+  if (token.expires_at && Date.now() > token.expires_at - 60000) {
+    // 有効期限切れ（1分前） → リフレッシュ
+    if (!token.refresh_token) return null;
+    try {
+      const refreshed = await gcpRefreshToken(token.refresh_token);
+      refreshed.refresh_token = refreshed.refresh_token || token.refresh_token;
+      await gcpSaveToken(refreshed);
+      token = refreshed;
+    } catch(e) {
+      console.warn('トークンリフレッシュ失敗:', e.message);
+      return null;
+    }
+  }
+  return token.access_token || null;
+}
+
+/* Monitoring API で今月の Distance Matrix リクエスト数を取得 */
+async function gcpFetchMonthlyUsage() {
+  const accessToken = await gcpGetAccessToken();
+  if (!accessToken) return null;
+
+  const now = new Date();
+  const startTime = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+
+  const params = new URLSearchParams({
+    'filter': 'metric.type="serviceruntime.googleapis.com/api/request_count" AND resource.labels.service="distance-matrix-backend.googleapis.com"',
+    'interval.startTime': startTime,
+    'interval.endTime': endTime,
+    'aggregation.alignmentPeriod': '2678400s',
+    'aggregation.perSeriesAligner': 'ALIGN_SUM',
+    'aggregation.crossSeriesReducer': 'REDUCE_SUM',
+    'aggregation.groupByFields': 'resource.labels.service',
+  });
+
+  const resp = await fetch(
+    `https://monitoring.googleapis.com/v3/projects/${GCP_PROJECT}/timeSeries?${params.toString()}`,
+    { headers: { 'Authorization': 'Bearer ' + accessToken } }
+  );
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Monitoring API エラー ${resp.status}: ${errText}`);
+  }
+  const json = await resp.json();
+  const point = json?.timeSeries?.[0]?.points?.[0]?.value;
+  if (!point) return 0;
+  return parseInt(point.int64Value || point.doubleValue || '0') || 0;
+}
+
+/* UI: maps-usage 表示を拡張 */
+function updateMapsUsageDisplay() {
+  const el = document.getElementById('maps-usage');
+  if (!el) return;
+  const used = getMapsUsed();
+  const pct = Math.min(100, Math.round(used / MAPS_FREE_LIMIT * 100));
+  const color = pct >= 90 ? '#c53030' : pct >= 70 ? '#92400e' : '#1a6b40';
+  const gcpHtml = el.dataset.gcpCount != null
+    ? ` / 実測: <span style="color:#1e3d6e;font-weight:700">${parseInt(el.dataset.gcpCount).toLocaleString()} req</span>`
+    : '';
+  const loginBtn = el.dataset.gcpLoggedIn === 'false'
+    ? ` <button onclick="gcpStartOAuth()" style="font-size:10px;padding:2px 7px;background:#1e3d6e;color:white;border:none;border-radius:4px;cursor:pointer;font-family:inherit">Google でログイン</button>`
+    : ` <button onclick="gcpRefreshUsageDisplay()" style="font-size:10px;padding:2px 7px;background:#edf2fa;color:#1e3d6e;border:none;border-radius:4px;cursor:pointer;font-family:inherit" id="gcp-refresh-btn">🔄 Google から更新</button>`;
+  el.innerHTML = `Google Maps 今月: <span style="color:${color};font-weight:700">${used.toLocaleString()} / ${MAPS_FREE_LIMIT.toLocaleString()} 要素（${pct}%）</span>${gcpHtml}${loginBtn}`;
+}
+
+/* ログイン状態を確認してUIを初期化 */
+async function gcpInitDisplay() {
+  const el = document.getElementById('maps-usage');
+  if (!el) return;
+  const token = await gcpLoadToken();
+  if (token) {
+    el.dataset.gcpLoggedIn = 'true';
+  } else {
+    el.dataset.gcpLoggedIn = 'false';
+  }
+  updateMapsUsageDisplay();
+}
+
+/* 「🔄 Google から更新」ボタン処理 */
+async function gcpRefreshUsageDisplay() {
+  const btn = document.getElementById('gcp-refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 取得中…'; }
+  try {
+    const count = await gcpFetchMonthlyUsage();
+    const el = document.getElementById('maps-usage');
+    if (el) {
+      if (count === null) {
+        el.dataset.gcpLoggedIn = 'false';
+      } else {
+        el.dataset.gcpCount = String(count);
+        el.dataset.gcpLoggedIn = 'true';
+      }
+    }
+  } catch(e) {
+    console.warn('Monitoring API 取得失敗:', e.message);
+    showToast('⚠️ Google からの取得に失敗しました: ' + e.message);
+  }
+  updateMapsUsageDisplay();
+}
+
+/* ページロード時に ?code= を処理 */
+async function gcpHandleRedirectCode() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const code = urlParams.get('code');
+  if (!code) return;
+  // URL から code を除去
+  history.replaceState({}, document.title, window.location.pathname);
+  try {
+    const tokenObj = await gcpExchangeCode(code);
+    await gcpSaveToken(tokenObj);
+    showToast('✅ Google 認証が完了しました');
+    const el = document.getElementById('maps-usage');
+    if (el) { el.dataset.gcpLoggedIn = 'true'; }
+    // 即座に使用量を取得
+    await gcpRefreshUsageDisplay();
+  } catch(e) {
+    console.error('OAuth コード交換失敗:', e);
+    showToast('⚠️ Google 認証に失敗しました: ' + e.message);
+  }
+}
+
 /* ── 初回起動 ── */
 (async () => {
+  // OAuth リダイレクトコードの処理（ログイン前でも実行）
+  await gcpHandleRedirectCode();
+
   const { data: { session } } = await db.auth.getSession();
   if (session) {
     document.getElementById('login-screen').style.display = 'none';
