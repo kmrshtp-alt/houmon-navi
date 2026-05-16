@@ -96,6 +96,9 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .override-time{width:84px;font-size:13px;padding:4px 6px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fffbeb;outline:none}
 .override-ok{border:none;background:#f59e0b;color:white;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-weight:700;font-family:inherit}
 .override-cancel{border:none;background:#f1f5f9;color:#64748b;border-radius:6px;padding:4px 6px;font-size:12px;cursor:pointer;font-family:inherit}
+.override-sel{font-size:13px;padding:3px 2px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fffbeb;outline:none;cursor:pointer;-webkit-appearance:none;text-align:center}
+.r-cancel-btn{border:none;background:#fee2e2;color:#c53030;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;font-family:inherit;margin-top:5px;display:inline-block}
+.r-cancel-btn:hover{background:#fecaca}
 /* ── 患者制約エディタ ── */
 #editor-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
 #editor-modal{background:white;border-radius:16px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.25)}
@@ -251,6 +254,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 <header>
   <div class="brand">🚗 訪問スケジューラ <a href="index.html">▶ 訪問診療ナビへ</a></div>
   <div class="status"><div class="status-dot" id="status-dot"></div><span id="status-text">読込中…</span></div>
+  <span id="save-status" style="font-size:11px;color:#94a3b8"></span>
 </header>
 
 <main>
@@ -261,8 +265,14 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
     <div class="card-body">
       <div class="cond-grid">
         <div class="cond-item">
+          <label>担当医</label>
+          <select id="doctor-select" onchange="onDoctorChange()" style="font-size:16px;padding:8px;border:2px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;width:100%">
+            <option value="">（選択）</option>
+          </select>
+        </div>
+        <div class="cond-item">
           <label>訪問日</label>
-          <input type="date" id="visit-date">
+          <input type="date" id="visit-date" onchange="loadRouteFromSupabase()">
         </div>
         <div class="cond-item">
           <label>最早出発</label>
@@ -362,6 +372,9 @@ let patients = [];          // scheduler_patients 全件
 let todayList = [];         // 今日の訪問対象（{patient, duration}）
 let distanceCache = null;   // 直近の距離行列
 let overrideEditing = new Set(); // 編集中のoverride（external_id）
+let lastResult = null;      // 最後の最適化結果
+let currentDoctor = '';     // 選択中の担当医
+let autoSaveTimer = null;   // 自動保存タイマー
 
 /* ── 今日だけ制約 localStorage 管理 ── */
 function todayOverrideKey() {
@@ -387,19 +400,21 @@ function setTodayOverride(id, from, to) {
   saveOverrides(ov);
   overrideEditing.delete(id);
   renderTodayList();
+  scheduleAutoSave();
 }
 function clearTodayOverride(id) {
   const ov = loadOverrides();
   delete ov[id];
   saveOverrides(ov);
   renderTodayList();
+  scheduleAutoSave();
 }
 function startOverrideEdit(id) {
   overrideEditing.add(id);
   renderTodayList();
   // フォーカスを開始時刻へ
   setTimeout(() => {
-    const el = document.getElementById(`ov-from-${id}`);
+    const el = document.getElementById(`ov-h-${id}`);
     if (el) el.focus();
   }, 50);
 }
@@ -408,9 +423,13 @@ function cancelOverrideEdit(id) {
   renderTodayList();
 }
 function confirmOverrideEdit(id) {
-  const from = document.getElementById(`ov-from-${id}`)?.value;
-  const to   = document.getElementById(`ov-to-${id}`)?.value;
-  if (!from || !to) { alert('開始・終了の両方を入力してください'); return; }
+  const fromH = document.getElementById(`ov-h-${id}`)?.value;
+  const fromM = document.getElementById(`ov-m-${id}`)?.value;
+  const toH   = document.getElementById(`ov-th-${id}`)?.value;
+  const toM   = document.getElementById(`ov-tm-${id}`)?.value;
+  if (!fromH || !toH) { alert('開始・終了の両方を入力してください'); return; }
+  const from = `${fromH}:${fromM||'00'}`;
+  const to   = `${toH}:${toM||'00'}`;
   if (timeToMin(from) >= timeToMin(to)) { alert('終了は開始より後にしてください'); return; }
   setTodayOverride(id, from, to);
 }
@@ -462,6 +481,7 @@ async function init() {
   setupSearch();
   renderTodayList();
   updateMapsUsageDisplay();
+  buildDoctorSelect();
 }
 
 async function loadPatients() {
@@ -654,18 +674,21 @@ function addPatientToToday(p) {
   renderTodayList();
   // 結果カードはクリア
   document.getElementById('result-card').style.display = 'none';
+  scheduleAutoSave();
 }
 
 function removePatient(idx) {
   todayList.splice(idx, 1);
   renderTodayList();
   document.getElementById('result-card').style.display = 'none';
+  scheduleAutoSave();
 }
 
 function updateDuration(idx, val) {
   const n = parseInt(val);
   if (isNaN(n) || n < 5 || n > 180) return;
   todayList[idx].duration = n;
+  scheduleAutoSave();
 }
 
 function renderTodayList() {
@@ -688,13 +711,13 @@ function renderTodayList() {
     // 今日だけUI
     let overrideUI;
     if (editing) {
-      const curFrom = ov?.from || '';
-      const curTo   = ov?.to   || '';
+      const [fromH, fromM] = (ov?.from || '09:00').split(':');
+      const [toH,   toM  ] = (ov?.to   || '17:00').split(':');
       overrideUI = `
         <div class="override-inputs">
-          <input class="override-time" type="time" id="ov-from-${id}" value="${curFrom || '08:00'}" step="300">
+          <select class="override-sel" id="ov-h-${id}">${makeHourOpts(fromH)}</select><span style="font-size:11px">:</span><select class="override-sel" id="ov-m-${id}">${makeMinOpts(fromM)}</select>
           <span style="font-size:11px;color:#94a3b8">〜</span>
-          <input class="override-time" type="time" id="ov-to-${id}"   value="${curTo   || '17:00'}" step="300">
+          <select class="override-sel" id="ov-th-${id}">${makeHourOpts(toH)}</select><span style="font-size:11px">:</span><select class="override-sel" id="ov-tm-${id}">${makeMinOpts(toM)}</select>
           <button class="override-ok"     onclick="confirmOverrideEdit('${id}')">✓</button>
           <button class="override-cancel" onclick="cancelOverrideEdit('${id}')">✗</button>
           <button class="override-cancel" onclick="setTodayOverride('${id}','00:00','23:59')" title="終日OK">終日</button>
@@ -1007,6 +1030,8 @@ async function optimize() {
     });
 
     renderResult(result, locations, dateStr, dayName, overrides);
+    lastResult = result;
+    scheduleAutoSave();
   } catch (e) {
     console.error(e);
     alert('最適化に失敗しました: ' + e.message);
@@ -1730,6 +1755,7 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
             <span class="r-stat consult">📋 ${v.duration}分</span>
           </div>
           ${detailHtml}
+          <button class="r-cancel-btn" onclick="cancelPatientFromResult('${esc(v.patient.external_id)}')">✕ キャンセル</button>
         </div>
       </div>`);
     }
@@ -1794,6 +1820,197 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
   void card.offsetWidth; // reflow
   card.classList.add('result-fadein');
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── 時刻セレクト用ヘルパー ── */
+function makeHourOpts(sel) {
+  return Array.from({length:14},(_,i)=>i+8)
+    .map(h=>`<option value="${String(h).padStart(2,'0')}" ${String(h).padStart(2,'0')===sel?'selected':''}>${String(h).padStart(2,'0')}</option>`)
+    .join('');
+}
+function makeMinOpts(sel) {
+  return Array.from({length:12},(_,i)=>i*5)
+    .map(m=>`<option value="${String(m).padStart(2,'0')}" ${String(m).padStart(2,'0')===sel?'selected':''}>${String(m).padStart(2,'0')}</option>`)
+    .join('');
+}
+
+/* ── 担当医変更 ── */
+function onDoctorChange() {
+  currentDoctor = document.getElementById('doctor-select').value;
+  loadRouteFromSupabase();
+}
+
+/* ── 担当医ドロップダウンを患者データから構築 ── */
+function buildDoctorSelect() {
+  const sel = document.getElementById('doctor-select');
+  const names = [...new Set(patients.map(p => p.doctor).filter(Boolean))].sort();
+  names.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+}
+
+/* ── Supabaseにルートを保存 ── */
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(saveRouteToSupabase, 800);
+}
+
+async function saveRouteToSupabase() {
+  if (!currentDoctor) return;
+  const visitDate = document.getElementById('visit-date').value;
+  if (!visitDate) return;
+  const overrides = loadOverrides();
+  const visitListJson = todayList.map(t => ({
+    external_id: t.patient.external_id,
+    duration: t.duration,
+    override: overrides[t.patient.external_id] || null
+  }));
+  try {
+    const { error } = await db.from('daily_routes').upsert({
+      doctor: currentDoctor,
+      visit_date: visitDate,
+      visit_list_json: visitListJson,
+      result_json: lastResult || null,
+      distance_matrix_json: distanceCache || null,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'doctor,visit_date' });
+    if (!error) {
+      const now = new Date();
+      const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      const el = document.getElementById('save-status');
+      if (el) el.textContent = `💾 ${ts}保存`;
+    }
+  } catch(e) {
+    // テーブル未作成の場合など、エラーは無視
+    console.warn('保存失敗:', e.message);
+  }
+}
+
+/* ── Supabaseからルートを読み込み ── */
+async function loadRouteFromSupabase() {
+  if (!currentDoctor) return;
+  const visitDate = document.getElementById('visit-date').value;
+  if (!visitDate) return;
+  try {
+    const { data, error } = await db.from('daily_routes')
+      .select('*')
+      .eq('doctor', currentDoctor)
+      .eq('visit_date', visitDate)
+      .maybeSingle();
+    if (error || !data) return;
+    // 患者リストを復元
+    todayList.length = 0;
+    const ovData = {};
+    for (const item of (data.visit_list_json || [])) {
+      const p = patients.find(x => x.external_id === item.external_id);
+      if (p) {
+        todayList.push({ patient: p, duration: item.duration });
+        if (item.override) ovData[item.external_id] = item.override;
+      }
+    }
+    // 今日だけ制約を復元（localStorageへ）
+    if (Object.keys(ovData).length) {
+      const existing = loadOverrides();
+      Object.assign(existing, ovData);
+      saveOverrides(existing);
+    }
+    // 距離行列を復元
+    if (data.distance_matrix_json) distanceCache = data.distance_matrix_json;
+    // 結果を復元
+    if (data.result_json) {
+      lastResult = data.result_json;
+      const overrides = loadOverrides();
+      const locations = [CLINIC, ...todayList.map(t => t.patient)];
+      renderResult(lastResult, locations, visitDate, getDayName(visitDate), overrides);
+      document.getElementById('result-card').style.display = '';
+    }
+    renderTodayList();
+    const el = document.getElementById('save-status');
+    if (el) {
+      const d = new Date(data.updated_at);
+      el.textContent = `💾 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}読込`;
+    }
+  } catch(e) {
+    console.warn('読込失敗:', e.message);
+  }
+}
+
+/* ── 確定結果から患者をキャンセルして再計算 ── */
+async function cancelPatientFromResult(externalId) {
+  if (!confirm(`この患者をキャンセルしますか？\n残りの患者で時刻を再計算します。`)) return;
+  if (!distanceCache) { alert('距離データがありません。再度最適化してください。'); return; }
+
+  // todayListから削除
+  const idx = todayList.findIndex(t => t.patient.external_id === externalId);
+  if (idx === -1) return;
+  todayList.splice(idx, 1);
+  renderTodayList();
+
+  if (todayList.length === 0) {
+    document.getElementById('result-card').style.display = 'none';
+    scheduleAutoSave();
+    return;
+  }
+
+  // 確定済み順序を保持して時刻を再計算
+  const dateStr = document.getElementById('visit-date').value;
+  const dayName = getDayName(dateStr);
+
+  // 既存resultのvisitsから残り患者の順序を取得
+  const confirmedOrder = (lastResult?.visits || [])
+    .filter(v => v.type === 'patient' && v.patient.external_id !== externalId)
+    .map(v => v.patient.external_id);
+
+  // todayListをconfirmedOrderに並べ直す
+  const reordered = confirmedOrder
+    .map(id => todayList.find(t => t.patient.external_id === id))
+    .filter(Boolean);
+  // confirmedOrderにない患者（念のため）を末尾に追加
+  const inOrder = new Set(confirmedOrder);
+  todayList.filter(t => !inOrder.has(t.patient.external_id)).forEach(t => reordered.push(t));
+  todayList.length = 0;
+  reordered.forEach(t => todayList.push(t));
+
+  const btn = document.getElementById('optimize-btn');
+  btn.disabled = true;
+  btn.textContent = '再計算中…';
+
+  try {
+    const locations = [CLINIC, ...todayList.map(t => t.patient)];
+    const matrix = await fetchDistanceMatrix(locations);
+    distanceCache = matrix;
+
+    const overrides = loadOverrides();
+    const feasWins = todayList.map(t => patientFeasibleWindows(t.patient, dayName, overrides[t.patient.external_id]));
+    const annotations = todayList.map(t => {
+      const mp = t.patient.memo_parsed||{};
+      const ov = overrides[t.patient.external_id];
+      return {isFixed:ov?false:!!mp.fixed_time, fixedTime:(!ov&&mp.fixed_time)?timeToMin(mp.fixed_time):null, prefDays:mp.preferred_days||[], prefTime:mp.preferred_time};
+    });
+    const cfg = {
+      firstMin: timeToMin(document.getElementById('first-min').value),
+      firstTarget: timeToMin(document.getElementById('first-target').value),
+      returnTarget: timeToMin(document.getElementById('return-target').value),
+      lunchEnabled: document.getElementById('lunch-toggle').checked,
+      lunchDuration: parseInt(document.getElementById('lunch-duration').value)||60,
+      returnClinic: true
+    };
+
+    // 順番固定で再シミュレート（最適化なし）
+    const order = [...Array(todayList.length).keys()];
+    const result = simulateSchedule(order, matrix, todayList, feasWins, annotations, cfg);
+    lastResult = result;
+    renderResult(result, locations, dateStr, dayName, overrides);
+    scheduleAutoSave();
+  } catch(e) {
+    alert('再計算に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🪄 最適順に並び替え';
+  }
 }
 
 /* ── 初回起動 ── */
