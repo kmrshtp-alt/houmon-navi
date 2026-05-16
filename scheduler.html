@@ -2234,36 +2234,117 @@ async function gcpFetchMonthlyUsage() {
   return parseInt(point.int64Value || point.doubleValue || '0') || 0;
 }
 
-/* UI: maps-usage 表示を拡張 */
+/* Supabase に実測キャッシュを保存（全ユーザーが参照できる） */
+function gcpCacheKey() {
+  const d = new Date();
+  return `maps_actual_cache_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+async function gcpSaveCache(count) {
+  await db.from('app_settings').upsert(
+    { key: gcpCacheKey(), value: JSON.stringify({ count, fetchedAt: Date.now() }), updated_at: new Date().toISOString() },
+    { onConflict: 'key' }
+  );
+}
+async function gcpLoadCache() {
+  try {
+    const { data } = await db.from('app_settings').select('value').eq('key', gcpCacheKey()).maybeSingle();
+    if (data?.value) return JSON.parse(data.value); // { count, fetchedAt }
+  } catch(e) {}
+  return null;
+}
+
+/* UI 表示を更新 */
 function updateMapsUsageDisplay() {
   const el = document.getElementById('maps-usage');
   if (!el) return;
-  const used = getMapsUsed();
-  const pct = Math.min(100, Math.round(used / MAPS_FREE_LIMIT * 100));
-  const color = pct >= 90 ? '#c53030' : pct >= 70 ? '#92400e' : '#1a6b40';
-  const gcpHtml = el.dataset.gcpCount != null
-    ? ` / 実測: <span style="color:#1e3d6e;font-weight:700">${parseInt(el.dataset.gcpCount).toLocaleString()} req</span>`
-    : '';
-  const loginBtn = el.dataset.gcpLoggedIn === 'false'
-    ? ` <button onclick="gcpStartOAuth()" style="font-size:10px;padding:2px 7px;background:#1e3d6e;color:white;border:none;border-radius:4px;cursor:pointer;font-family:inherit">Google でログイン</button>`
-    : ` <button onclick="gcpRefreshUsageDisplay()" style="font-size:10px;padding:2px 7px;background:#edf2fa;color:#1e3d6e;border:none;border-radius:4px;cursor:pointer;font-family:inherit" id="gcp-refresh-btn">🔄 Google から更新</button>`;
-  el.innerHTML = `Google Maps 今月: <span style="color:${color};font-weight:700">${used.toLocaleString()} / ${MAPS_FREE_LIMIT.toLocaleString()} 要素（${pct}%）</span>${gcpHtml}${loginBtn}`;
+
+  const state = el.dataset.gcpState || 'unknown'; // 'live' | 'cached' | 'no_token' | 'unknown'
+  const gcpCount = el.dataset.gcpCount != null ? parseInt(el.dataset.gcpCount) : null;
+  const cacheAge = el.dataset.gcpCacheAge ? parseInt(el.dataset.gcpCacheAge) : null; // 分
+
+  let usageHtml, btnHtml;
+
+  if (gcpCount !== null) {
+    // Google 実測値あり
+    const pct = Math.min(100, Math.round(gcpCount / MAPS_FREE_LIMIT * 100));
+    const color = pct >= 90 ? '#c53030' : pct >= 70 ? '#92400e' : '#1a6b40';
+    const label = state === 'cached' && cacheAge != null
+      ? `<span style="color:#64748b;font-size:10px">（${cacheAge < 60 ? cacheAge+'分前' : Math.round(cacheAge/60)+'時間前'}取得）</span>`
+      : '';
+    usageHtml = `Google Maps 今月: <span style="color:${color};font-weight:700">${gcpCount.toLocaleString()} req / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${pct}%）</span> ${label}`;
+    btnHtml = `<button onclick="gcpRefreshUsageDisplay()" style="font-size:10px;padding:2px 7px;background:#edf2fa;color:#1e3d6e;border:none;border-radius:4px;cursor:pointer;font-family:inherit" id="gcp-refresh-btn">🔄 更新</button>`;
+  } else if (state === 'no_token') {
+    // トークンなし・実測不可 → 0%表示をしない
+    usageHtml = `Google Maps 今月: <span style="color:#94a3b8">使用量 確認中（管理者ログインで取得）</span>`;
+    btnHtml = `<button onclick="gcpStartOAuth()" style="font-size:10px;padding:2px 7px;background:#1e3d6e;color:white;border:none;border-radius:4px;cursor:pointer;font-family:inherit">🔑 管理者ログイン</button>`;
+  } else {
+    // 取得中 or 不明
+    usageHtml = `Google Maps 今月: <span style="color:#94a3b8">⏳ 取得中…</span>`;
+    btnHtml = '';
+  }
+
+  el.innerHTML = `${usageHtml} ${btnHtml}`;
 }
 
-/* ログイン状態を確認してUIを初期化 */
+/* 起動時: キャッシュ確認 → 古ければ自動フェッチ（管理者トークンを全員で共用） */
 async function gcpInitDisplay() {
   const el = document.getElementById('maps-usage');
   if (!el) return;
-  const token = await gcpLoadToken();
-  if (token) {
-    el.dataset.gcpLoggedIn = 'true';
-  } else {
-    el.dataset.gcpLoggedIn = 'false';
-  }
+
+  // まず「取得中」表示
+  el.dataset.gcpState = 'unknown';
   updateMapsUsageDisplay();
+
+  // Supabase キャッシュを確認（全ユーザー共通）
+  const cache = await gcpLoadCache();
+  const CACHE_TTL = 4 * 60 * 60 * 1000; // 4時間
+  if (cache && (Date.now() - cache.fetchedAt) < CACHE_TTL) {
+    // 新鮮なキャッシュあり → 即表示
+    const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60000);
+    el.dataset.gcpState = 'cached';
+    el.dataset.gcpCount = String(cache.count);
+    el.dataset.gcpCacheAge = String(ageMin);
+    updateMapsUsageDisplay();
+    return;
+  }
+
+  // キャッシュ古い or なし → Supabase に管理者トークンがあれば自動フェッチ
+  const token = await gcpLoadToken();
+  if (!token) {
+    // トークン自体がない → 管理者ログインを促す
+    el.dataset.gcpState = 'no_token';
+    updateMapsUsageDisplay();
+    return;
+  }
+
+  // トークンあり → フェッチ試行
+  try {
+    const count = await gcpFetchMonthlyUsage();
+    if (count !== null) {
+      await gcpSaveCache(count); // Supabase にキャッシュ保存（他ユーザーも使える）
+      el.dataset.gcpState = 'live';
+      el.dataset.gcpCount = String(count);
+      el.dataset.gcpCacheAge = '0';
+      updateMapsUsageDisplay();
+    } else {
+      el.dataset.gcpState = 'no_token';
+      updateMapsUsageDisplay();
+    }
+  } catch(e) {
+    // フェッチ失敗 → 古いキャッシュがあればそれを表示
+    if (cache) {
+      const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60000);
+      el.dataset.gcpState = 'cached';
+      el.dataset.gcpCount = String(cache.count);
+      el.dataset.gcpCacheAge = String(ageMin);
+    } else {
+      el.dataset.gcpState = 'no_token';
+    }
+    updateMapsUsageDisplay();
+  }
 }
 
-/* 「🔄 Google から更新」ボタン処理 */
+/* 「🔄 更新」ボタン処理 */
 async function gcpRefreshUsageDisplay() {
   const btn = document.getElementById('gcp-refresh-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 取得中…'; }
@@ -2272,10 +2353,13 @@ async function gcpRefreshUsageDisplay() {
     const el = document.getElementById('maps-usage');
     if (el) {
       if (count === null) {
-        el.dataset.gcpLoggedIn = 'false';
+        el.dataset.gcpState = 'no_token';
+        delete el.dataset.gcpCount;
       } else {
+        await gcpSaveCache(count);
+        el.dataset.gcpState = 'live';
         el.dataset.gcpCount = String(count);
-        el.dataset.gcpLoggedIn = 'true';
+        el.dataset.gcpCacheAge = '0';
       }
     }
   } catch(e) {
