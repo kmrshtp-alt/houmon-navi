@@ -93,7 +93,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .override-badge{display:inline-flex;align-items:center;gap:3px;background:#fef3c7;border:1.5px solid #f59e0b;color:#92400e;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;flex-shrink:0}
 .override-badge-clear{background:none;border:none;color:#b45309;cursor:pointer;padding:0 0 0 3px;font-size:13px;font-weight:700;line-height:1}
 .override-inputs{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
-.override-time{width:80px;font-size:13px;padding:4px 6px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fffbeb;outline:none}
+.override-time{width:84px;font-size:13px;padding:4px 6px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fffbeb;outline:none}
 .override-ok{border:none;background:#f59e0b;color:white;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-weight:700;font-family:inherit}
 .override-cancel{border:none;background:#f1f5f9;color:#64748b;border-radius:6px;padding:4px 6px;font-size:12px;cursor:pointer;font-family:inherit}
 /* ── 患者制約エディタ ── */
@@ -159,6 +159,10 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .r-info{min-width:0}
 .r-name{font-weight:700;color:#1e293b}
 .r-meta{font-size:11px;color:#64748b}
+.r-stats{display:flex;gap:8px;margin-top:5px;flex-wrap:wrap}
+.r-stat{display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:10px;font-size:12px;font-weight:700}
+.r-stat.travel{background:#edf2fa;color:#1e3d6e}
+.r-stat.consult{background:#dcfce7;color:#1a6b40}
 .r-warn{color:#c53030;font-size:11px;font-weight:700;margin-left:6px}
 
 .summary-row{display:flex;gap:14px;flex-wrap:wrap;padding:12px 16px;background:#edf2fa;border-radius:10px;margin-top:14px;font-size:13px;color:#1e3d6e;font-weight:700}
@@ -216,6 +220,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
   .r-time{font-size:12px}
   .r-name{font-size:13px}
   .r-meta{font-size:10px}
+  .r-stat{font-size:11px;padding:2px 7px}
   .r-violation{font-size:10px}
   .summary-row{gap:8px;padding:10px 12px;font-size:12px}
 
@@ -406,6 +411,7 @@ function confirmOverrideEdit(id) {
   const from = document.getElementById(`ov-from-${id}`)?.value;
   const to   = document.getElementById(`ov-to-${id}`)?.value;
   if (!from || !to) { alert('開始・終了の両方を入力してください'); return; }
+  if (timeToMin(from) < 8 * 60) { alert('8:00以降の時刻を入力してください'); return; }
   if (timeToMin(from) >= timeToMin(to)) { alert('終了は開始より後にしてください'); return; }
   setTodayOverride(id, from, to);
 }
@@ -687,9 +693,9 @@ function renderTodayList() {
       const curTo   = ov?.to   || '';
       overrideUI = `
         <div class="override-inputs">
-          <input class="override-time" type="time" id="ov-from-${id}" value="${curFrom}" step="900">
+          <input class="override-time" type="time" id="ov-from-${id}" value="${curFrom || '08:00'}" min="08:00" max="21:00" step="300">
           <span style="font-size:11px;color:#94a3b8">〜</span>
-          <input class="override-time" type="time" id="ov-to-${id}"   value="${curTo}"   step="900">
+          <input class="override-time" type="time" id="ov-to-${id}"   value="${curTo   || '17:00'}" min="08:00" max="21:00" step="300">
           <button class="override-ok"     onclick="confirmOverrideEdit('${id}')">✓</button>
           <button class="override-cancel" onclick="cancelOverrideEdit('${id}')">✗</button>
         </div>`;
@@ -1714,7 +1720,11 @@ function renderResult(result, locations, dateStr, dayName) {
         <div class="r-num">${pNum}</div>
         <div class="r-info">
           <div class="r-name">${esc(v.patient.name)}${badgeIcon ? ` <span class="r-warn">${badgeIcon}</span>` : ''}</div>
-          <div class="r-meta">${condText} ・ 診察 ${v.duration}分 ・ 移動 ${v.travel}分</div>
+          <div class="r-meta">${condText}</div>
+          <div class="r-stats">
+            <span class="r-stat travel">🚗 ${v.travel}分</span>
+            <span class="r-stat consult">📋 ${v.duration}分</span>
+          </div>
           ${detailHtml}
         </div>
       </div>`);
