@@ -480,7 +480,7 @@ async function init() {
   await loadPatients();
   setupSearch();
   renderTodayList();
-  updateMapsUsageDisplay();
+  await loadMapsUsage();
   buildDoctorSelect();
 }
 
@@ -849,18 +849,52 @@ function waitForGMaps(timeout = 15000) {
   });
 }
 
-/* ── Google Maps API 使用量管理 ── */
+/* ── Google Maps API 使用量管理（Supabase 永続化） ── */
 const MAPS_FREE_LIMIT = 40000; // $200クレジット ÷ $5/1000要素 = 40,000要素/月
+let mapsUsedCache = 0; // in-memory キャッシュ（同期読み取り用）
 
 function mapsUsageKey() {
   const d = new Date();
-  return `maps_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
+  return `maps_usage_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 function getMapsUsed() {
-  return parseInt(localStorage.getItem(mapsUsageKey()) || '0');
+  return mapsUsedCache;
 }
-function addMapsUsed(n) {
-  localStorage.setItem(mapsUsageKey(), String(getMapsUsed() + n));
+async function loadMapsUsage() {
+  // Supabase から今月の使用量を読み込む
+  try {
+    const key = mapsUsageKey();
+    const { data, error } = await db.from('app_settings').select('value').eq('key', key).maybeSingle();
+    if (!error && data?.value != null) {
+      mapsUsedCache = parseInt(data.value) || 0;
+    } else {
+      // Supabase に記録なし → localStorage の値があれば移行
+      const local = parseInt(localStorage.getItem(key) || '0');
+      if (local > 0) {
+        mapsUsedCache = local;
+        await saveMapsUsageToSupabase(local); // 移行
+      } else {
+        mapsUsedCache = 0;
+      }
+    }
+  } catch(e) {
+    // Supabase 失敗時は localStorage フォールバック
+    mapsUsedCache = parseInt(localStorage.getItem(mapsUsageKey()) || '0');
+  }
+  updateMapsUsageDisplay();
+}
+async function saveMapsUsageToSupabase(n) {
+  try {
+    await db.from('app_settings').upsert(
+      { key: mapsUsageKey(), value: n, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    );
+  } catch(e) { console.warn('Maps使用量保存失敗:', e.message); }
+}
+async function addMapsUsed(n) {
+  mapsUsedCache += n;
+  localStorage.setItem(mapsUsageKey(), String(mapsUsedCache)); // バックアップ
+  await saveMapsUsageToSupabase(mapsUsedCache);
 }
 function getMapsRemaining() {
   return Math.max(0, MAPS_FREE_LIMIT - getMapsUsed());
@@ -934,7 +968,7 @@ async function fetchDistanceMatrix(locations) {
         }
       }
     }
-    addMapsUsed(elements);
+    await addMapsUsed(elements);
     updateMapsUsageDisplay();
     return matrix;
 
