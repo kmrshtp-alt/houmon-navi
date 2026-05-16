@@ -2042,6 +2042,7 @@ async function cancelPatientFromResult(externalId) {
 /* ── Google Cloud Monitoring API 連携（Distance Matrix 実使用量取得） ── */
 const GCP_PROJECT = 'houmon-navi-scheduler';
 const GCP_CLIENT_ID = '978633506719-neerlkj1dhk4u2ea9d2iuomdba8948gb.apps.googleusercontent.com';
+const GCP_CLIENT_SECRET = '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';
 const GCP_REDIRECT_URI = 'https://kmrshtp-alt.github.io/houmon-navi/scheduler.html';
 const GCP_SCOPE = 'https://www.googleapis.com/auth/monitoring.read';
 const GCP_TOKEN_KEY = 'gcp_oauth_token';
@@ -2125,6 +2126,7 @@ async function gcpExchangeCode(code, verifier) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: GCP_CLIENT_ID,
+      client_secret: GCP_CLIENT_SECRET,
       redirect_uri: GCP_REDIRECT_URI,
       grant_type: 'authorization_code',
       code,
@@ -2160,6 +2162,7 @@ async function gcpRefreshToken(refreshToken) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: GCP_CLIENT_ID,
+      client_secret: GCP_CLIENT_SECRET,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     }).toString(),
