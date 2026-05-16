@@ -252,7 +252,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
 <!-- ヘッダ -->
 <header>
-  <div class="brand">🚗 訪問スケジューラ <span style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:4px">v1.1.3</span> <a href="index.html">▶ 訪問診療ナビへ</a></div>
+  <div class="brand">🚗 訪問スケジューラ <span style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:4px">v1.1.4</span> <a href="index.html">▶ 訪問診療ナビへ</a></div>
   <div class="status"><div class="status-dot" id="status-dot"></div><span id="status-text">読込中…</span></div>
   <span id="save-status" style="font-size:11px;color:#94a3b8"></span>
 </header>
@@ -2249,31 +2249,59 @@ function updateMapsUsageDisplay() {
   if (!el) return;
 
   const state = el.dataset.gcpState || 'unknown'; // 'live' | 'cached' | 'no_token' | 'unknown'
-  const gcpCount = el.dataset.gcpCount != null ? parseInt(el.dataset.gcpCount) : null;
+  const gcpReqCount = el.dataset.gcpCount != null ? parseInt(el.dataset.gcpCount) : null; // API呼び出し回数
   const cacheAge = el.dataset.gcpCacheAge ? parseInt(el.dataset.gcpCacheAge) : null; // 分
 
-  let usageHtml, btnHtml;
+  // 自己追跡の要素数（課金単位）を使ってパーセント計算
+  const selfElements = getMapsUsed(); // 要素数（origins×destinations）
+  const selfPct = Math.min(100, Math.round(selfElements / MAPS_FREE_LIMIT * 100));
+  const selfColor = selfPct >= 90 ? '#c53030' : selfPct >= 70 ? '#e67e22' : '#1a6b40';
 
-  if (gcpCount !== null) {
-    // Google 実測値あり
-    const pct = Math.min(100, Math.round(gcpCount / MAPS_FREE_LIMIT * 100));
-    const color = pct >= 90 ? '#c53030' : pct >= 70 ? '#92400e' : '#1a6b40';
-    const label = state === 'cached' && cacheAge != null
-      ? `<span style="color:#64748b;font-size:10px">（${cacheAge < 60 ? cacheAge+'分前' : Math.round(cacheAge/60)+'時間前'}取得）</span>`
+  let usageHtml, btnHtml, alertHtml = '';
+
+  // 80%以上でアラートバナー表示
+  if (selfPct >= 90) {
+    alertHtml = `<div style="background:#fff5f5;border-left:4px solid #c53030;padding:6px 10px;font-size:12px;color:#c53030;margin-top:4px">
+      🚨 <strong>Google Maps 無料枠 残り${100-selfPct}%</strong>（${getMapsRemaining().toLocaleString()}要素）— このままでは課金が発生します。今月は最適化の実行を控えてください。
+    </div>`;
+  } else if (selfPct >= 80) {
+    alertHtml = `<div style="background:#fffbeb;border-left:4px solid #e67e22;padding:6px 10px;font-size:12px;color:#92400e;margin-top:4px">
+      ⚠️ <strong>Google Maps 無料枠 残り${100-selfPct}%</strong>（${getMapsRemaining().toLocaleString()}要素）— 月末まで最適化回数を控えめにしてください。
+    </div>`;
+  }
+
+  if (gcpReqCount !== null) {
+    // Google Cloud Monitoring の実測値あり（APIコール回数）
+    const cacheLabel = state === 'cached' && cacheAge != null
+      ? `<span style="color:#94a3b8;font-size:10px">（${cacheAge < 60 ? cacheAge+'分前' : Math.round(cacheAge/60)+'時間前'}取得）</span>`
       : '';
-    usageHtml = `Google Maps 今月: <span style="color:${color};font-weight:700">${gcpCount.toLocaleString()} req / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${pct}%）</span> ${label}`;
+    // 自己追跡の要素数を主表示、Cloud Monitoringのコール回数はサブ情報として表示
+    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
+      + ` <span style="color:#94a3b8;font-size:10px">APIコール ${gcpReqCount.toLocaleString()}回 ${cacheLabel}</span>`;
     btnHtml = `<button onclick="gcpRefreshUsageDisplay()" style="font-size:10px;padding:2px 7px;background:#edf2fa;color:#1e3d6e;border:none;border-radius:4px;cursor:pointer;font-family:inherit" id="gcp-refresh-btn">🔄 更新</button>`;
   } else if (state === 'no_token') {
-    // トークンなし・実測不可 → 0%表示をしない
-    usageHtml = `Google Maps 今月: <span style="color:#94a3b8">使用量 確認中（管理者ログインで取得）</span>`;
+    // トークンなし → 自己追跡の要素数のみ表示
+    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
+      + ` <span style="color:#94a3b8;font-size:10px">（管理者ログインでAPI実測値を取得）</span>`;
     btnHtml = `<button onclick="gcpStartOAuth()" style="font-size:10px;padding:2px 7px;background:#1e3d6e;color:white;border:none;border-radius:4px;cursor:pointer;font-family:inherit">🔑 管理者ログイン</button>`;
   } else {
-    // 取得中 or 不明
-    usageHtml = `Google Maps 今月: <span style="color:#94a3b8">⏳ 取得中…</span>`;
+    // 取得中 or 不明 → 自己追跡分は即時表示
+    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
+      + ` <span style="color:#94a3b8;font-size:10px">⏳ API実測値取得中…</span>`;
     btnHtml = '';
   }
 
   el.innerHTML = `${usageHtml} ${btnHtml}`;
+
+  // アラートバナーを maps-usage の直後に挿入
+  const alertEl = document.getElementById('maps-usage-alert');
+  if (alertEl) alertEl.innerHTML = alertHtml;
+  else if (alertHtml && el.parentNode) {
+    const div = document.createElement('div');
+    div.id = 'maps-usage-alert';
+    div.innerHTML = alertHtml;
+    el.parentNode.insertBefore(div, el.nextSibling);
+  }
 }
 
 /* 起動時: キャッシュ確認 → 古ければ自動フェッチ（管理者トークンを全員で共用） */
