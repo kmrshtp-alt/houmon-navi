@@ -411,7 +411,6 @@ function confirmOverrideEdit(id) {
   const from = document.getElementById(`ov-from-${id}`)?.value;
   const to   = document.getElementById(`ov-to-${id}`)?.value;
   if (!from || !to) { alert('開始・終了の両方を入力してください'); return; }
-  if (timeToMin(from) < 8 * 60) { alert('8:00以降の時刻を入力してください'); return; }
   if (timeToMin(from) >= timeToMin(to)) { alert('終了は開始より後にしてください'); return; }
   setTodayOverride(id, from, to);
 }
@@ -693,11 +692,12 @@ function renderTodayList() {
       const curTo   = ov?.to   || '';
       overrideUI = `
         <div class="override-inputs">
-          <input class="override-time" type="time" id="ov-from-${id}" value="${curFrom || '08:00'}" min="08:00" max="21:00" step="300">
+          <input class="override-time" type="time" id="ov-from-${id}" value="${curFrom || '08:00'}" step="300">
           <span style="font-size:11px;color:#94a3b8">〜</span>
-          <input class="override-time" type="time" id="ov-to-${id}"   value="${curTo   || '17:00'}" min="08:00" max="21:00" step="300">
+          <input class="override-time" type="time" id="ov-to-${id}"   value="${curTo   || '17:00'}" step="300">
           <button class="override-ok"     onclick="confirmOverrideEdit('${id}')">✓</button>
           <button class="override-cancel" onclick="cancelOverrideEdit('${id}')">✗</button>
+          <button class="override-cancel" onclick="setTodayOverride('${id}','00:00','23:59')" title="終日OK">終日</button>
         </div>`;
     } else if (ov) {
       overrideUI = `
@@ -1005,7 +1005,7 @@ async function optimize() {
       lunchEnabled, lunchDuration, returnClinic
     });
 
-    renderResult(result, locations, dateStr, dayName);
+    renderResult(result, locations, dateStr, dayName, overrides);
   } catch (e) {
     console.error(e);
     alert('最適化に失敗しました: ' + e.message);
@@ -1668,7 +1668,7 @@ function violationDetails(patient, arrival, dayName, hasWarning) {
 }
 
 /* ── 結果描画 ── */
-function renderResult(result, locations, dateStr, dayName) {
+function renderResult(result, locations, dateStr, dayName, overrides = {}) {
   const card = document.getElementById('result-card');
   const body = document.getElementById('result-body');
 
@@ -1706,8 +1706,11 @@ function renderResult(result, locations, dateStr, dayName) {
       </div>`);
     } else if (v.type === 'patient') {
       pNum++;
-      const condText = condSummary(v.patient.memo_parsed);
-      const violations = violationDetails(v.patient, v.arrival, dayName, !!v.warning);
+      const ov = overrides[v.patient.external_id];
+      const condText = ov
+        ? `<span style="color:#b45309;font-weight:700">🕐 今日: ${ov.from}〜${ov.to}</span><span style="color:#94a3b8;font-size:10px;margin-left:4px">（通常制約を無視）</span>`
+        : condSummary(v.patient.memo_parsed);
+      const violations = ov ? [] : violationDetails(v.patient, v.arrival, dayName, !!v.warning);
       const hasNG   = violations.some(m => m.level === 'ng');
       const hasWarn = violations.some(m => m.level === 'warn');
       const badgeIcon = hasNG ? '❌' : hasWarn ? '⚠️' : '';
