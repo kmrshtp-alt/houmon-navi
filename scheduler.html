@@ -87,6 +87,15 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .edit-btn:hover{background:#dbeafe}
 .s-edit-btn{width:26px;height:26px;border:none;background:none;color:#94a3b8;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-left:auto}
 .s-edit-btn:hover{background:#edf2fa;color:#1e3d6e}
+/* ── 今日だけ制約オーバーライド ── */
+.override-btn{border:none;background:#f1f5f9;color:#475569;border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0}
+.override-btn:hover{background:#fef3c7;color:#92400e}
+.override-badge{display:inline-flex;align-items:center;gap:3px;background:#fef3c7;border:1.5px solid #f59e0b;color:#92400e;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;flex-shrink:0}
+.override-badge-clear{background:none;border:none;color:#b45309;cursor:pointer;padding:0 0 0 3px;font-size:13px;font-weight:700;line-height:1}
+.override-inputs{display:inline-flex;align-items:center;gap:4px;flex-shrink:0}
+.override-time{width:80px;font-size:13px;padding:4px 6px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fffbeb;outline:none}
+.override-ok{border:none;background:#f59e0b;color:white;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-weight:700;font-family:inherit}
+.override-cancel{border:none;background:#f1f5f9;color:#64748b;border-radius:6px;padding:4px 6px;font-size:12px;cursor:pointer;font-family:inherit}
 /* ── 患者制約エディタ ── */
 #editor-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
 #editor-modal{background:white;border-radius:16px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.25)}
@@ -347,6 +356,59 @@ const DAY_NAMES = ['日','月','火','水','木','金','土'];
 let patients = [];          // scheduler_patients 全件
 let todayList = [];         // 今日の訪問対象（{patient, duration}）
 let distanceCache = null;   // 直近の距離行列
+let overrideEditing = new Set(); // 編集中のoverride（external_id）
+
+/* ── 今日だけ制約 localStorage 管理 ── */
+function todayOverrideKey() {
+  const d = new Date();
+  return `today_override_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}_${String(d.getDate()).padStart(2,'0')}`;
+}
+function cleanOldOverrides() {
+  const today = todayOverrideKey();
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('today_override_') && k !== today)
+    .forEach(k => localStorage.removeItem(k));
+}
+function loadOverrides() {
+  try { return JSON.parse(localStorage.getItem(todayOverrideKey()) || '{}'); }
+  catch { return {}; }
+}
+function saveOverrides(ov) {
+  localStorage.setItem(todayOverrideKey(), JSON.stringify(ov));
+}
+function setTodayOverride(id, from, to) {
+  const ov = loadOverrides();
+  ov[id] = { from, to };
+  saveOverrides(ov);
+  overrideEditing.delete(id);
+  renderTodayList();
+}
+function clearTodayOverride(id) {
+  const ov = loadOverrides();
+  delete ov[id];
+  saveOverrides(ov);
+  renderTodayList();
+}
+function startOverrideEdit(id) {
+  overrideEditing.add(id);
+  renderTodayList();
+  // フォーカスを開始時刻へ
+  setTimeout(() => {
+    const el = document.getElementById(`ov-from-${id}`);
+    if (el) el.focus();
+  }, 50);
+}
+function cancelOverrideEdit(id) {
+  overrideEditing.delete(id);
+  renderTodayList();
+}
+function confirmOverrideEdit(id) {
+  const from = document.getElementById(`ov-from-${id}`)?.value;
+  const to   = document.getElementById(`ov-to-${id}`)?.value;
+  if (!from || !to) { alert('開始・終了の両方を入力してください'); return; }
+  if (timeToMin(from) >= timeToMin(to)) { alert('終了は開始より後にしてください'); return; }
+  setTodayOverride(id, from, to);
+}
 
 /* ── ステータス表示 ── */
 function setStatus(kind, text) {
@@ -390,6 +452,7 @@ async function init() {
   const dd = String(today.getDate()).padStart(2, '0');
   document.getElementById('visit-date').value = `${yyyy}-${mm}-${dd}`;
 
+  cleanOldOverrides();
   await loadPatients();
   setupSearch();
   renderTodayList();
@@ -606,13 +669,47 @@ function renderTodayList() {
     list.innerHTML = '<div class="empty-msg">上の検索ボックスから患者を追加してください</div>';
     return;
   }
-  list.innerHTML = todayList.map((t, i) => `
+  const overrides = loadOverrides();
+  list.innerHTML = todayList.map((t, i) => {
+    const id = t.patient.external_id;
+    const ov = overrides[id];
+    const editing = overrideEditing.has(id);
+
+    // 制約表示：オーバーライドがあれば通常制約の代わりに表示
+    const condHTML = ov
+      ? `<span style="color:#b45309;font-weight:700">🕐 今日: ${ov.from}〜${ov.to}</span><span style="color:#94a3b8;font-size:10px;margin-left:4px">（通常制約を無視）</span>`
+      : condSummary(t.patient.memo_parsed);
+
+    // 今日だけUI
+    let overrideUI;
+    if (editing) {
+      const curFrom = ov?.from || '';
+      const curTo   = ov?.to   || '';
+      overrideUI = `
+        <div class="override-inputs">
+          <input class="override-time" type="time" id="ov-from-${id}" value="${curFrom}" step="900">
+          <span style="font-size:11px;color:#94a3b8">〜</span>
+          <input class="override-time" type="time" id="ov-to-${id}"   value="${curTo}"   step="900">
+          <button class="override-ok"     onclick="confirmOverrideEdit('${id}')">✓</button>
+          <button class="override-cancel" onclick="cancelOverrideEdit('${id}')">✗</button>
+        </div>`;
+    } else if (ov) {
+      overrideUI = `
+        <div class="override-badge" onclick="startOverrideEdit('${id}')" title="クリックで編集">
+          🕐 ${ov.from}〜${ov.to}
+          <button class="override-badge-clear" onclick="event.stopPropagation();clearTodayOverride('${id}')" title="解除">✕</button>
+        </div>`;
+    } else {
+      overrideUI = `<button class="override-btn" onclick="startOverrideEdit('${id}')">🕐 今日だけ</button>`;
+    }
+
+    return `
     <div class="visit-item">
       <div class="visit-item-top" onclick="openEditor(todayList[${i}].patient)">
         <div class="visit-num">${i + 1}</div>
         <div class="visit-info" style="flex:1;min-width:0">
           <div class="visit-name">${esc(t.patient.name)} <span style="font-size:11px;color:#64748b;font-weight:400">${esc(t.patient.doctor || '')}</span></div>
-          <div class="visit-cond">${condSummary(t.patient.memo_parsed)}</div>
+          <div class="visit-cond">${condHTML}</div>
         </div>
         <span style="font-size:16px;color:#94a3b8;flex-shrink:0">›</span>
       </div>
@@ -620,10 +717,11 @@ function renderTodayList() {
         <input class="dur-input" type="number" min="5" max="180" step="5" value="${t.duration}"
           onchange="updateDuration(${i}, this.value)" style="width:70px">
         <div class="dur-label">分</div>
+        ${overrideUI}
         <button class="del-btn" onclick="removePatient(${i})" style="margin-left:auto">✕</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 /* ── 時刻ユーティリティ ── */
@@ -641,7 +739,12 @@ function roundUp15(min) {
 }
 
 /* 患者の指定日における利用可能時間帯（OK windows） */
-function patientFeasibleWindows(patient, dayName) {
+function patientFeasibleWindows(patient, dayName, todayOverride) {
+  // 今日だけの制約が入っていたら通常制約を全て無視してそれだけを使う
+  if (todayOverride?.from && todayOverride?.to) {
+    return [[timeToMin(todayOverride.from), timeToMin(todayOverride.to)]];
+  }
+
   const mp = patient.memo_parsed || {};
   // 全日 NG
   if (mp.ng_days && mp.ng_days.includes(dayName)) return [];
@@ -876,13 +979,17 @@ async function optimize() {
     const matrix = await fetchDistanceMatrix(locations);
 
     // 各患者の利用可能時間帯
-    const feasWins = todayList.map(t => patientFeasibleWindows(t.patient, dayName));
+    const overrides = loadOverrides();
+    const feasWins = todayList.map(t =>
+      patientFeasibleWindows(t.patient, dayName, overrides[t.patient.external_id])
+    );
 
-    // 各患者に「fixed」「優先」スコア
+    // 各患者に「fixed」「優先」スコア（今日だけ制約がある場合は fixed 扱いを解除）
     const annotations = todayList.map((t, i) => {
       const mp = t.patient.memo_parsed || {};
-      const isFixed = !!mp.fixed_time;
-      const fixedTime = mp.fixed_time ? timeToMin(mp.fixed_time) : null;
+      const ov = overrides[t.patient.external_id];
+      const isFixed = ov ? false : !!mp.fixed_time;  // 今日だけ制約があれば fixed 無効
+      const fixedTime = (!ov && mp.fixed_time) ? timeToMin(mp.fixed_time) : null;
       return { isFixed, fixedTime, prefDays: mp.preferred_days || [], prefTime: mp.preferred_time };
     });
 
