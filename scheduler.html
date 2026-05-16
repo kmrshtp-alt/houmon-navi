@@ -2063,12 +2063,14 @@ async function gcpCodeVerifierToChallenge(verifier) {
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-/* OAuth 認可 URL への遷移（ポップアップ方式 → ページ遷移なし） */
+/* OAuth 認可 URL への遷移（ポップアップ方式 → ページ遷移なし）
+   verifier を state に含めることでポップアップ自身がトークン交換を完結できる
+   → オリジンを問わず（file:// 親でも）動作する */
 async function gcpStartOAuth() {
   const verifier = gcpGenerateCodeVerifier();
   const challenge = await gcpCodeVerifierToChallenge(verifier);
-  // localStorage に保存（BroadcastChannel 経由でポップアップと共有のため sessionStorage は不可）
-  localStorage.setItem('gcp_pkce_verifier', verifier);
+  // state に verifier を埋め込む（ポップアップが自力でコード交換するため）
+  const state = 'gcp_monitoring_oauth:' + verifier;
   const params = new URLSearchParams({
     client_id: GCP_CLIENT_ID,
     redirect_uri: GCP_REDIRECT_URI,
@@ -2078,58 +2080,45 @@ async function gcpStartOAuth() {
     code_challenge_method: 'S256',
     access_type: 'offline',
     prompt: 'consent',
-    state: 'gcp_monitoring_oauth',
+    state,
   });
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 
-  // ポップアップで開く（メインページから離れない）
   const popup = window.open(authUrl, 'gcp_oauth_popup', 'width=520,height=640,scrollbars=yes,resizable=yes');
   if (!popup) {
     window.location.href = authUrl; // ポップアップブロック時はフォールバック
     return;
   }
 
-  async function handleCode(code) {
-    popup?.close();
-    try {
-      const tokenObj = await gcpExchangeCode(code);
-      await gcpSaveToken(tokenObj);
-      showToast('✅ Google 認証が完了しました');
-      const el = document.getElementById('maps-usage');
-      if (el) el.dataset.gcpLoggedIn = 'true';
-      await gcpRefreshUsageDisplay();
-    } catch(err) {
-      console.error('OAuth コード交換失敗:', err);
-      showToast('⚠️ Google 認証に失敗しました: ' + err.message);
-    }
-  }
+  // ポップアップが閉じたら表示を更新（オリジン問わず動作）
+  const pollClosed = setInterval(async () => {
+    if (!popup.closed) return;
+    clearInterval(pollClosed);
+    clearTimeout(timeout);
+    bcChannel.close();
+    // ポップアップがトークンを Supabase に保存済みのはずなので再初期化
+    await gcpInitDisplay();
+  }, 600);
 
-  // ① BroadcastChannel（同一オリジン・最優先）
-  // Google の OAuth ページが COOP ヘッダーで window.opener を null にするため
-  // postMessage は使えない → BroadcastChannel が確実
-  const bc = new BroadcastChannel('gcp_oauth_channel');
-  const bcTimer = setTimeout(() => bc.close(), 300000);
-  bc.onmessage = async (e) => {
-    if (e.data?.type !== 'gcp_oauth_code' || !e.data?.code) return;
-    clearTimeout(bcTimer);
-    bc.close();
-    window.removeEventListener('message', msgHandler);
-    await handleCode(e.data.code);
+  // BroadcastChannel で同一オリジン時に即時通知を受け取る（最適化）
+  const bcChannel = new BroadcastChannel('gcp_oauth_channel');
+  bcChannel.onmessage = async (e) => {
+    if (e.data?.type !== 'gcp_oauth_done') return;
+    clearInterval(pollClosed);
+    clearTimeout(timeout);
+    bcChannel.close();
+    popup?.close();
+    await gcpInitDisplay();
   };
 
-  // ② postMessage フォールバック（window.opener が生きている場合）
-  async function msgHandler(e) {
-    if (e.data?.type !== 'gcp_oauth_code' || !e.data?.code) return;
-    window.removeEventListener('message', msgHandler);
-    bc.close();
-    await handleCode(e.data.code);
-  }
-  window.addEventListener('message', msgHandler);
+  const timeout = setTimeout(() => {
+    clearInterval(pollClosed);
+    bcChannel.close();
+  }, 300000);
 }
 
-/* 認可コード → トークン交換 */
-async function gcpExchangeCode(code) {
-  const verifier = localStorage.getItem('gcp_pkce_verifier');
+/* 認可コード → トークン交換（verifier を直接渡す） */
+async function gcpExchangeCode(code, verifier) {
   if (!verifier) throw new Error('PKCE verifier が見つかりません');
   const resp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -2143,9 +2132,7 @@ async function gcpExchangeCode(code) {
     }).toString(),
   });
   if (!resp.ok) throw new Error('トークン交換失敗: ' + (await resp.text()));
-  const json = await resp.json();
-  localStorage.removeItem('gcp_pkce_verifier');
-  return json;
+  return await resp.json();
 }
 
 /* トークン保存 */
@@ -2373,41 +2360,33 @@ async function gcpRefreshUsageDisplay() {
 async function gcpHandleRedirectCode() {
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get('code');
-  const state = urlParams.get('state');
-  if (!code || state !== 'gcp_monitoring_oauth') return;
+  const stateParam = urlParams.get('state') || '';
+  // state が 'gcp_monitoring_oauth:VERIFIER' 形式かチェック
+  if (!code || !stateParam.startsWith('gcp_monitoring_oauth:')) return;
 
-  // URL から code/state を除去
+  // verifier を state から取り出す
+  const verifier = stateParam.slice('gcp_monitoring_oauth:'.length);
   history.replaceState({}, document.title, window.location.pathname);
 
-  // ポップアップ内にいる場合: BroadcastChannel + postMessage で親に送って閉じる
-  // （Google の COOP ヘッダーで window.opener が null になる場合があるため両方試みる）
-  let sentToParent = false;
+  // ポップアップ自身がトークン交換を完結させる（オリジン問わず確実）
   try {
-    const bc = new BroadcastChannel('gcp_oauth_channel');
-    bc.postMessage({ type: 'gcp_oauth_code', code });
-    bc.close();
-    sentToParent = true;
-  } catch(e) {}
-  if (window.opener) {
-    try { window.opener.postMessage({ type: 'gcp_oauth_code', code }, '*'); sentToParent = true; } catch(e) {}
-  }
-  if (sentToParent) {
-    // ポップアップを閉じる（少し待って親が受信する時間を確保）
-    setTimeout(() => window.close(), 500);
-    return;
-  }
-
-  // フォールバック：ポップアップブロックでページ遷移してきた場合（自分でトークン交換）
-  try {
-    const tokenObj = await gcpExchangeCode(code);
+    const tokenObj = await gcpExchangeCode(code, verifier);
     await gcpSaveToken(tokenObj);
-    showToast('✅ Google 認証が完了しました');
-    const el = document.getElementById('maps-usage');
-    if (el) { el.dataset.gcpLoggedIn = 'true'; }
-    await gcpRefreshUsageDisplay();
+    // BroadcastChannel で同一オリジンの親に完了を通知（最適化）
+    try {
+      const bc = new BroadcastChannel('gcp_oauth_channel');
+      bc.postMessage({ type: 'gcp_oauth_done' });
+      bc.close();
+    } catch(e) {}
+    // ポップアップを閉じる（親は pollClosed で検知して gcpInitDisplay を呼ぶ）
+    setTimeout(() => window.close(), 400);
   } catch(e) {
     console.error('OAuth コード交換失敗:', e);
-    showToast('⚠️ Google 認証に失敗しました: ' + e.message);
+    // エラー時はポップアップに表示（閉じない）
+    document.body.innerHTML = `<div style="font-family:sans-serif;padding:40px;color:#c53030">
+      <h2>⚠️ Google 認証エラー</h2><p>${e.message}</p>
+      <button onclick="window.close()" style="margin-top:20px;padding:10px 20px;cursor:pointer">閉じる</button>
+    </div>`;
   }
 }
 
