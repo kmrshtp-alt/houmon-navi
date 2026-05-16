@@ -286,6 +286,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
       </div>
 
       <button class="optimize-btn" id="optimize-btn" onclick="optimize()">🪄 最適順に並び替え</button>
+      <div id="maps-usage" style="font-size:12px;color:#64748b;margin-top:8px;text-align:right"></div>
     </div>
   </div>
 
@@ -389,6 +390,7 @@ async function init() {
   await loadPatients();
   setupSearch();
   renderTodayList();
+  updateMapsUsageDisplay();
 }
 
 async function loadPatients() {
@@ -709,6 +711,31 @@ function waitForGMaps(timeout = 15000) {
   });
 }
 
+/* ── Google Maps API 使用量管理 ── */
+const MAPS_FREE_LIMIT = 40000; // $200クレジット ÷ $5/1000要素 = 40,000要素/月
+
+function mapsUsageKey() {
+  const d = new Date();
+  return `maps_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function getMapsUsed() {
+  return parseInt(localStorage.getItem(mapsUsageKey()) || '0');
+}
+function addMapsUsed(n) {
+  localStorage.setItem(mapsUsageKey(), String(getMapsUsed() + n));
+}
+function getMapsRemaining() {
+  return Math.max(0, MAPS_FREE_LIMIT - getMapsUsed());
+}
+function updateMapsUsageDisplay() {
+  const el = document.getElementById('maps-usage');
+  if (!el) return;
+  const used = getMapsUsed();
+  const pct = Math.min(100, Math.round(used / MAPS_FREE_LIMIT * 100));
+  const color = pct >= 90 ? '#c53030' : pct >= 70 ? '#92400e' : '#1a6b40';
+  el.innerHTML = `Google Maps 今月: <span style="color:${color};font-weight:700">${used.toLocaleString()} / ${MAPS_FREE_LIMIT.toLocaleString()} 要素（${pct}%）</span>`;
+}
+
 /* ── 距離行列取得（JS SDK の DistanceMatrixService を使用） ── */
 async function fetchDistanceMatrix(locations) {
   // locations: [{address, lat?, lng?}, ...]  クリニックが index 0
@@ -717,6 +744,18 @@ async function fetchDistanceMatrix(locations) {
   } catch (e) {
     console.warn('Google Maps SDK 未ロード → フォールバック使用', e.message);
     return fallbackDistanceMatrix(locations);
+  }
+
+  // 無料枠チェック（40,000要素/月）
+  const elements = locations.length * locations.length;
+  if (getMapsUsed() + elements > MAPS_FREE_LIMIT) {
+    const used = getMapsUsed();
+    const remaining = getMapsRemaining();
+    throw new Error(
+      `Google Maps の無料枠上限に達したため実行できません。\n` +
+      `今月使用済み: ${used.toLocaleString()} 要素 / 残り: ${remaining.toLocaleString()} 要素\n` +
+      `（今回必要: ${elements} 要素）`
+    );
   }
 
   // DistanceMatrixService はアドレス文字列を直接受け付ける（内部でジオコード）
@@ -755,6 +794,8 @@ async function fetchDistanceMatrix(locations) {
         }
       }
     }
+    addMapsUsed(elements);
+    updateMapsUsageDisplay();
     return matrix;
 
   } catch (e) {
