@@ -2,1173 +2,477 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>訪問診療ナビ</title>
-<script>
-// GCP OAuth コードが来たら scheduler.html に転送（Supabase 等の読込より先に実行）
-(function(){
-  try {
-    var sp = new URLSearchParams(window.location.search);
-    var state = sp.get('state') || '';
-    if (sp.get('code') && state.indexOf('gcp_monitoring_oauth:') === 0) {
-      window.location.replace('scheduler.html' + window.location.search);
-    }
-  } catch(e) {}
-})();
-</script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>訪問スケジューラ</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>window._gMapsLoaded = false; function _gMapsCallback() { window._gMapsLoaded = true; }</script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;background:#f1f5f9;color:#1e293b;min-height:100vh}
 
-/* ── ログイン画面 ── */
-#login-screen {
-  position: fixed; inset: 0;
-  background: #1e3d6e;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9999;
-}
-.login-card {
-  background: white;
-  border-radius: 20px;
-  padding: 40px 44px;
-  width: 340px;
-  text-align: center;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-}
-.login-card h2 { font-size: 20px; font-weight: 800; color: #1e293b; margin-bottom: 4px; }
-.login-card p  { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
-.login-input {
-  width: 100%;
-  border: 2px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 12px 14px;
-  font-size: 16px;
-  font-family: inherit;
-  outline: none;
-  text-align: center;
-  letter-spacing: 0.1em;
-  margin-bottom: 14px;
-  transition: border-color 0.15s;
-}
-.login-input:focus { border-color: #1e3d6e; }
-.login-input.error { border-color: #c53030; animation: shake 0.3s; }
-.login-btn {
-  width: 100%;
-  background: #1e3d6e;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  padding: 13px;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-}
-.login-btn:hover { background: #172f55; }
-.login-error { font-size: 12px; color: #c53030; margin-top: 10px; min-height: 18px; }
-@keyframes shake {
-  0%,100% { transform: translateX(0); }
-  25%      { transform: translateX(-6px); }
-  75%      { transform: translateX(6px); }
-}
+/* ── ログイン ── */
+#login-screen{position:fixed;inset:0;background:#1e3d6e;display:flex;align-items:center;justify-content:center;z-index:999}
+.login-box{background:white;padding:40px 36px;border-radius:18px;box-shadow:0 16px 48px rgba(0,0,0,0.25);width:340px;text-align:center}
+.login-box h1{font-size:20px;color:#1e3d6e;margin-bottom:6px}
+.login-box p{font-size:13px;color:#64748b;margin-bottom:22px}
+.login-input{width:100%;padding:12px 14px;font-size:16px;border:2px solid #e2e8f0;border-radius:10px;outline:none;font-family:inherit;background:#f8fafc;color:#1e293b}
+.login-input:focus{border-color:#1e3d6e}
+.login-input.error{border-color:#c53030;animation:shake 0.3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.result-fadein{animation:fadeInUp 0.35s ease both}
+.login-btn{width:100%;margin-top:14px;padding:12px;background:#1e3d6e;color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
+.login-btn:hover{background:#172f55}
+#login-error{color:#c53030;font-size:12px;margin-top:8px;height:14px}
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
-  background: #f1f5f9;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+/* ── ヘッダ ── */
+header{background:#1e3d6e;color:white;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:18px;display:flex;align-items:center;gap:8px}
+.brand a{color:#a8c4e5;font-size:12px;text-decoration:none;margin-left:12px;font-weight:500}
+.brand a:hover{color:white}
+.status{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#a8c4e5}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#64748b}
+.status-dot.ok{background:#22c55e}
+.status-dot.err{background:#ef4444}
 
-/* ── Header ── */
-header {
-  background: #1e3d6e;
-  color: white;
-  padding: 0 24px;
-  height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-}
-header h1 { font-size: 17px; font-weight: 800; }
-.header-right { display: flex; align-items: center; gap: 20px; }
-.tabs { display: flex; gap: 4px; }
-.tab {
-  padding: 7px 18px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.65);
-  transition: all 0.15s;
-  border: none;
-  background: none;
-}
-.tab:hover { background: rgba(255,255,255,0.15); color: white; }
-.tab.active { background: rgba(255,255,255,0.2); color: white; }
-.status-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: rgba(255,255,255,0.75); }
-.qr-btn {
-  background: rgba(255,255,255,0.15); border: 1.5px solid rgba(255,255,255,0.3);
-  color: white; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700;
-  cursor: pointer; font-family: inherit; transition: background 0.15s;
-}
-.qr-btn:hover { background: rgba(255,255,255,0.25); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
-.dot.err { background: #f87171; }
-.dot.loading { background: #fbbf24; }
+/* ── メイン ── */
+main{max-width:1100px;margin:24px auto;padding:0 16px}
+.card{background:white;border-radius:16px;box-shadow:0 1px 6px rgba(0,0,0,0.06);margin-bottom:18px;overflow:hidden}
+.card-header{padding:14px 22px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em}
+.card-body{padding:20px 22px}
 
-/* ── Main ── */
-main { flex: 1; overflow: hidden; display: flex; }
+/* ── 条件パネル ── */
+.cond-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.cond-item label{display:block;font-size:12px;font-weight:700;color:#64748b;margin-bottom:6px;letter-spacing:0.02em}
+.cond-item input[type="time"],.cond-item input[type="date"],.cond-item select{width:100%;padding:9px 12px;font-size:15px;border:2px solid #e2e8f0;border-radius:8px;outline:none;background:#f8fafc;color:#1e293b;font-family:inherit}
+.cond-item input:focus,.cond-item select:focus{border-color:#1e3d6e}
+.cond-row{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:14px;flex-wrap:wrap}
+.cond-row label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.cond-row input[type="checkbox"]{width:18px;height:18px;accent-color:#1e3d6e;cursor:pointer}
 
-/* ── Route Screen ── */
-#route-screen {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  overflow-y: auto;
-}
+/* ── 検索 ── */
+.search-wrap{position:relative}
+.search-input{width:100%;border:2px solid #e2e8f0;border-radius:10px;padding:11px 14px;font-size:15px;font-family:inherit;outline:none;background:#f8fafc;color:#1e293b;transition:border-color 0.15s}
+.search-input:focus{border-color:#1e3d6e;background:white}
+.search-input::placeholder{color:#cbd5e1}
+.suggest-list{position:absolute;top:calc(100% + 2px);left:0;right:0;background:white;border:1.5px solid #1e3d6e;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,0.13);z-index:200;overflow:hidden;display:none;max-height:380px;overflow-y:auto}
+.suggest-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #f1f5f9;padding:11px 16px;cursor:pointer;transition:background 0.1s;font-family:inherit;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.suggest-item:last-child{border-bottom:none}
+.suggest-item:hover,.suggest-item.active{background:#edf2fa}
+.suggest-item > *{pointer-events:none}
+.s-name{font-weight:700;font-size:14px;color:#1e293b}
+.s-meta{font-size:11px;color:#64748b;margin-top:2px}
+.suggest-empty{padding:14px 16px;color:#94a3b8;text-align:center;font-size:13px}
+mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 
-.route-card {
-  background: white;
-  border-radius: 20px;
-  padding: 40px 44px;
-  width: 100%;
-  max-width: 560px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.09);
-}
-
-/* ── Route Rows ── */
-.route-row { padding: 18px 0; position: relative; }
-.route-row + .route-row { border-top: 1px solid #f1f5f9; }
-
-.rlabel {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-.rlabel.from { color: #1a6b40; }
-.rlabel.to   { color: #92400e; }
-
-/* Autocomplete input */
-.route-input-wrap { position: relative; }
-
-.route-input {
-  width: 100%;
-  border: 2px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 12px 36px 12px 14px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #0f172a;
-  font-family: inherit;
-  outline: none;
-  background: #f8fafc;
-  transition: border-color 0.15s, background 0.15s;
-}
-.route-input::placeholder { color: #cbd5e1; font-weight: 400; font-size: 16px; }
-.route-input:focus { border-color: #1e3d6e; background: white; }
-.route-input.selected-from { border-color: #1a6b40; background: #e8f4ee; }
-.route-input.selected-to   { border-color: #92400e; background: #fdf3e4; }
-
-.clear-btn {
-  position: absolute;
-  right: 10px; top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #94a3b8;
-  font-size: 18px;
-  cursor: pointer;
-  line-height: 1;
-  display: none;
-  padding: 4px;
-}
-.clear-btn.visible { display: block; }
-
-.raddr {
-  font-size: 12px;
-  color: #94a3b8;
-  margin-top: 5px;
-  padding-left: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* ── 訪問予定リスト ── */
+.visit-list{margin-top:4px}
+.visit-item{display:block;padding:10px 0;border-bottom:1px solid #f1f5f9}
+.visit-item-top{display:flex;align-items:center;gap:10px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.visit-item-top:active{opacity:0.7}
+.visit-item-bottom{display:flex;align-items:center;gap:8px;margin-top:7px;padding-left:40px}
+.visit-item:last-child{border-bottom:none}
+.visit-num{width:30px;height:30px;border-radius:50%;background:#1e3d6e;color:white;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.visit-info{min-width:0}
+.visit-name{font-weight:700;font-size:14px;color:#1e293b}
+.visit-cond{font-size:11px;color:#64748b;margin-top:2px;line-height:1.4}
+.visit-cond .fixed{color:#92400e;font-weight:700}
+.visit-cond .ng{color:#c53030}
+.dur-input{width:100%;padding:6px 8px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:6px;outline:none;text-align:center;background:#f8fafc;font-family:inherit}
+.dur-input:focus{border-color:#1e3d6e;background:white}
+.dur-label{font-size:10px;color:#64748b;text-align:center;margin-top:2px}
+.del-btn{width:32px;height:32px;border:none;background:#fee2e2;color:#c53030;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.del-btn:hover{background:#fecaca}
+.edit-btn{width:32px;height:32px;border:none;background:#edf2fa;color:#1e3d6e;border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.edit-btn:hover{background:#dbeafe}
+.s-edit-btn{width:26px;height:26px;border:none;background:none;color:#94a3b8;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-left:auto}
+.s-edit-btn:hover{background:#edf2fa;color:#1e3d6e}
+/* ── 今日だけ設定オーバーライド ── */
+.override-btn{border:none;background:#f1f5f9;color:#475569;border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0}
+.override-btn:hover{background:#fef3c7;color:#92400e}
+.override-badge{display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1.5px solid #f59e0b;color:#92400e;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;flex-shrink:0;flex-wrap:wrap}
+.override-badge-clear{background:none;border:none;color:#b45309;cursor:pointer;padding:0 0 0 3px;font-size:13px;font-weight:700;line-height:1}
+.override-editor{display:flex;flex-direction:column;gap:4px;flex-shrink:0;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:8px;padding:6px 8px}
+.today-ov-row{display:flex;align-items:center;gap:3px;flex-wrap:nowrap}
+.today-ov-type{font-size:12px;padding:2px 4px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fff;outline:none;cursor:pointer;font-weight:700}
+.today-ov-type.ok{color:#1a6b40}
+.today-ov-type.ng{color:#c53030}
+.override-editor-btns{display:flex;gap:4px;margin-top:2px}
+.override-ok{border:none;background:#f59e0b;color:white;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-weight:700;font-family:inherit}
+.override-add{border:none;background:#e0f2fe;color:#0369a1;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit}
+.override-cancel{border:none;background:#f1f5f9;color:#64748b;border-radius:6px;padding:4px 6px;font-size:12px;cursor:pointer;font-family:inherit}
+.override-sel{font-size:13px;padding:3px 2px;border:1.5px solid #f59e0b;border-radius:6px;font-family:inherit;background:#fffbeb;outline:none;cursor:pointer;-webkit-appearance:none;text-align:center}
+.r-cancel-btn{border:none;background:#fee2e2;color:#c53030;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;font-family:inherit;margin-top:5px;display:inline-block}
+.r-cancel-btn:hover{background:#fecaca}
+/* ── 患者制約エディタ ── */
+#editor-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
+#editor-modal{background:white;border-radius:16px;width:100%;max-width:680px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.25)}
+.editor-hd{padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.editor-hd-title{font-weight:800;font-size:16px;color:#1e293b}
+.editor-hd-sub{font-size:11px;color:#94a3b8;margin-top:3px}
+.editor-close{width:32px;height:32px;border:none;background:#f1f5f9;border-radius:8px;cursor:pointer;font-size:16px;flex-shrink:0}
+.editor-body{overflow-y:auto;padding:18px 20px;flex:1;-webkit-overflow-scrolling:touch}
+.editor-sec{margin-bottom:20px}
+.editor-sec-title{font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f1f5f9}
+.raw-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.raw-label{font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:4px}
+.raw-text{font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;min-height:52px;white-space:pre-wrap;line-height:1.6;word-break:break-all}
+.raw-text.empty{color:#cbd5e1;font-style:italic}
+.edit-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.edit-label{font-size:12px;font-weight:700;color:#475569;min-width:76px}
+.edit-select,.edit-input-text{padding:7px 10px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:8px;outline:none;background:#f8fafc;color:#1e293b;font-family:inherit}
+.edit-select:focus,.edit-input-text:focus{border-color:#1e3d6e}
+.day-checks{display:flex;gap:5px;flex-wrap:wrap}
+.day-chk{display:flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;background:#f1f5f9;padding:4px 8px;border-radius:6px;user-select:none;-webkit-user-select:none}
+.day-chk input{accent-color:#1e3d6e}
+.windows-list{display:flex;flex-direction:column;gap:6px}
+.window-row{display:flex;align-items:center;gap:5px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;flex-wrap:wrap}
+.wr-day{width:54px;padding:4px 5px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:white;font-family:inherit}
+.wr-time{width:80px;padding:4px 6px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:white;font-family:inherit}
+.wr-reason{flex:1;min-width:60px;padding:4px 7px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:white;font-family:inherit}
+.win-del{width:24px;height:24px;border:none;background:#fee2e2;color:#c53030;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0}
+.win-add-btn{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:6px 12px;background:#edf2fa;border:none;border-radius:8px;cursor:pointer;color:#1e3d6e;font-family:inherit;font-weight:700;margin-top:6px}
+.notes-ta{width:100%;padding:8px 10px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:8px;outline:none;background:#f8fafc;font-family:inherit;resize:vertical;min-height:56px;color:#1e293b}
+.notes-ta:focus{border-color:#1e3d6e}
+.editor-ft{padding:14px 20px;border-top:1px solid #f1f5f9;display:flex;gap:10px;justify-content:flex-end}
+.ed-cancel{padding:10px 20px;background:#f1f5f9;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:#64748b}
+.ed-save{padding:10px 24px;background:#1e3d6e;color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+.ed-save:disabled{background:#94a3b8;cursor:not-allowed}
+#toast-msg{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a6b40;color:white;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:600;pointer-events:none;transition:opacity 0.3s;opacity:0}
+@media(max-width:640px){
+  /* エディタ */
+  .raw-grid{grid-template-columns:1fr}
+  #editor-overlay{padding:0;align-items:flex-end}
+  #editor-modal{border-radius:16px 16px 0 0;max-height:92vh}
+  .editor-ft{flex-direction:row}
+  .ed-cancel,.ed-save{flex:1;text-align:center}
 }
 
-/* Suggest dropdown */
-.suggest-list {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0; right: 0;
-  background: white;
-  border: 1.5px solid #1e3d6e;
-  border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.13);
-  z-index: 200;
-  overflow: hidden;
-  display: none;
-}
-.suggest-item {
-  display: block; width: 100%; text-align: left;
-  background: none; border: none; border-bottom: 1px solid #f1f5f9;
-  padding: 11px 16px; cursor: pointer;
-  transition: background 0.1s; font-family: inherit;
-  user-select: none; -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
-.suggest-item:last-child { border-bottom: none; }
-.suggest-item:hover, .suggest-item.active { background: #edf2fa; }
-.suggest-item > * { pointer-events: none; }
-.s-name { font-size: 15px; font-weight: 700; color: #1e293b; }
-.s-name mark { background: #fef08a; color: #1e293b; border-radius: 2px; padding: 0 1px; }
-.s-furi { font-size: 11px; color: #94a3b8; margin-top: 1px; }
-.s-addr { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.suggest-empty { padding: 14px 16px; font-size: 13px; color: #94a3b8; text-align: center; }
+.empty-msg{padding:30px 16px;text-align:center;color:#94a3b8;font-size:13px}
 
-/* Clinic button */
-.clinic-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: #edf2fa;
-  border: 1.5px solid #a8c4e5;
-  border-radius: 7px;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e3d6e;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: inherit;
-  white-space: nowrap;
-}
-.clinic-btn:hover { background: #c8dff5; border-color: #90b7de; }
+/* ── 最適化ボタン ── */
+.optimize-btn{width:100%;padding:14px;background:#1a6b40;color:white;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:6px;letter-spacing:0.02em}
+.optimize-btn:hover{background:#155a35}
+.optimize-btn:disabled{background:#94a3b8;cursor:not-allowed}
 
-.rlabel-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.from-btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+/* ── 結果 ── */
+.result-row{display:grid;grid-template-columns:60px 32px 1fr;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
+.result-row:last-child{border-bottom:none}
+.result-row.clinic{background:#f1f5f9;border-radius:8px;padding:9px 12px;border-bottom:none;margin-bottom:4px;margin-top:4px}
+.result-row.lunch{background:#fef9c3;border-radius:8px;padding:9px 12px;border-bottom:none;margin-bottom:4px;margin-top:4px}
+.r-time{font-weight:700;color:#1e3d6e;font-variant-numeric:tabular-nums}
+.r-num{width:26px;height:26px;border-radius:50%;background:#1e3d6e;color:white;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.r-num.clinic{background:#1a6b40}
+.r-num.lunch{background:#92400e}
+.r-info{min-width:0}
+.r-name{font-weight:700;color:#1e293b}
+.r-meta{font-size:11px;color:#64748b}
+.r-stats{display:flex;gap:8px;margin-top:5px;flex-wrap:wrap}
+.r-stat{display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:10px;font-size:12px;font-weight:700}
+.r-stat.travel{background:#edf2fa;color:#1e3d6e}
+.r-stat.consult{background:#dcfce7;color:#1a6b40}
+.r-warn{color:#c53030;font-size:11px;font-weight:700;margin-left:6px}
 
-/* Toll toggle */
-.toll-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: #f8fafc;
-  border-radius: 10px;
-  cursor: pointer;
-  user-select: none;
-}
-.toll-toggle input[type="checkbox"] { display: none; }
-.toggle-track {
-  width: 40px; height: 22px;
-  background: #cbd5e1;
-  border-radius: 11px;
-  position: relative;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-.toggle-track::after {
-  content: '';
-  position: absolute;
-  width: 18px; height: 18px;
-  background: white;
-  border-radius: 50%;
-  top: 2px; left: 2px;
-  transition: transform 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.toll-toggle.on .toggle-track { background: #1a6b40; }
-.toll-toggle.on .toggle-track::after { transform: translateX(18px); }
-.toll-label { font-size: 13px; color: #475569; font-weight: 600; }
-.toll-label small { display: block; font-size: 11px; color: #94a3b8; font-weight: 400; margin-top: 1px; }
+.summary-row{display:flex;gap:14px;flex-wrap:wrap;padding:12px 16px;background:#edf2fa;border-radius:10px;margin-top:14px;font-size:13px;color:#1e3d6e;font-weight:700}
+.warning-box{background:#fef9c3;border-left:4px solid #ca8a04;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#854d0e}
+.row-ng{background:#fff5f5}
+.row-warn{background:#fffbeb}
+.r-violation{font-size:11px;margin-top:3px;padding:2px 6px;border-radius:4px;display:inline-block}
+.r-viol-ng{color:#c53030;background:#fee2e2}
+.r-viol-warn{color:#92400e;background:#fef3c7}
+.error-box{background:#fee2e2;border-left:4px solid #dc2626;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#7f1d1d}
 
-/* Swap & Navigate */
-.swap-row { display: flex; justify-content: center; padding: 4px 0; }
-.swap-btn {
-  background: white;
-  border: 2px solid #1e3d6e;
-  border-radius: 50%;
-  width: 36px; height: 36px;
-  cursor: pointer;
-  color: #1e3d6e;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-.swap-btn:hover { background: #edf2fa; transform: rotate(180deg); }
+.gmap-btn{display:block;width:100%;margin-top:14px;padding:14px;background:#1e3d6e;color:white;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
+.gmap-btn:hover{background:#172f55}
 
-.nav-btn {
-  width: 100%;
-  background: #1e3d6e;
-  color: white;
-  border: none;
-  border-radius: 14px;
-  padding: 17px;
-  font-size: 16px;
-  font-weight: 800;
-  cursor: pointer;
-  margin-top: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-shadow: 0 4px 16px rgba(30,61,110,0.3);
-  transition: all 0.15s;
-  font-family: inherit;
-}
-.nav-btn:hover:not(:disabled) { background: #172f55; transform: translateY(-1px); }
-.nav-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: default; transform: none; }
+/* ── モバイル ── */
+@media (max-width:640px){
+  /* ヘッダ */
+  body{overflow:auto}
+  header{padding:10px 14px;gap:6px}
+  .brand{font-size:15px}
+  .brand a{display:none}
+  .status{font-size:12px}
 
-/* ── Manage Screen ── */
-#manage-screen { display: none; width: 100%; overflow-y: auto; padding: 32px; }
-.manage-inner { max-width: 720px; margin: 0 auto; }
+  /* メインレイアウト */
+  main{margin:10px auto;padding:0 10px}
+  .card{border-radius:12px;margin-bottom:12px}
+  .card-header{padding:10px 14px;font-size:12px}
+  .card-body{padding:14px 14px}
 
-.card { background: white; border-radius: 16px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); margin-bottom: 24px; }
-.card-header { padding: 18px 24px 14px; border-bottom: 1px solid #f1f5f9; font-size: 14px; font-weight: 700; color: #475569; }
-.card-body { padding: 20px 24px; }
+  /* 条件グリッド：2列 */
+  .cond-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .cond-item label{font-size:11px;margin-bottom:4px}
+  .cond-item input[type="time"],
+  .cond-item input[type="date"],
+  .cond-item select{font-size:16px;padding:8px 8px}
+  .cond-row{font-size:13px;margin-top:10px;gap:8px}
 
-.form-row { display: flex; gap: 12px; align-items: flex-end; }
-.fg { flex: 1; }
-.fg label { display: block; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  /* 検索 */
+  .search-input{font-size:16px;padding:12px 14px}
 
-input[type="text"] {
-  width: 100%;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 14px;
-  outline: none;
-  font-family: inherit;
-  color: #1e293b;
-  background: #f8fafc;
-  transition: border-color 0.15s;
-}
-input[type="text"]:focus { border-color: #1e3d6e; background: white; }
+  /* 訪問予定リスト */
+  .visit-name{font-size:15px}
+  .visit-cond{font-size:11px}
+  .visit-item-top{gap:8px}
+  .visit-item-bottom{padding-left:38px;gap:8px;margin-top:8px}
+  .dur-input{width:72px;font-size:16px;padding:8px 6px}
+  .del-btn,.edit-btn{width:40px;height:40px;font-size:16px;border-radius:10px}
 
-.add-btn {
-  background: #1a6b40; color: white; border: none; border-radius: 8px;
-  padding: 0 22px; font-size: 14px; font-weight: 700; cursor: pointer;
-  height: 40px; white-space: nowrap; font-family: inherit; transition: background 0.15s; flex-shrink: 0;
-}
-.add-btn:hover { background: #155a35; }
-.add-btn:disabled { background: #94a3b8; cursor: default; }
+  /* 最適化ボタン */
+  .optimize-btn{padding:16px;font-size:17px;border-radius:14px}
 
-.tbl-head {
-  display: grid; grid-template-columns: 160px 1fr 72px;
-  padding: 10px 24px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
-  font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em;
-}
-.tbl-row {
-  display: grid; grid-template-columns: 160px 1fr 72px;
-  padding: 13px 24px; border-bottom: 1px solid #f8fafc; align-items: center; transition: background 0.1s;
-}
-.tbl-row:hover { background: #fafafa; }
-.tbl-row:last-child { border-bottom: none; }
-.tbl-name { font-weight: 700; font-size: 15px; color: #1e293b; }
-.tbl-addr { font-size: 13px; color: #64748b; padding-right: 12px; }
-.del-btn {
-  background: none; border: 1.5px solid #f4aaaa; border-radius: 6px;
-  color: #c53030; font-size: 12px; font-weight: 700; padding: 4px 10px;
-  cursor: pointer; transition: all 0.12s; font-family: inherit;
-}
-.del-btn:hover { background: #fce8e8; border-color: #c53030; }
+  /* 結果 */
+  .result-row{grid-template-columns:52px 26px 1fr;gap:6px;font-size:13px}
+  .result-row.clinic,.result-row.lunch{padding:8px 10px}
+  .r-time{font-size:12px}
+  .r-name{font-size:13px}
+  .r-meta{font-size:10px}
+  .r-stat{font-size:11px;padding:2px 7px}
+  .r-violation{font-size:10px}
+  .summary-row{gap:8px;padding:10px 12px;font-size:12px}
 
-.empty-msg { text-align: center; padding: 48px 24px; color: #94a3b8; font-size: 14px; line-height: 1.7; }
+  /* Google Mapsボタン */
+  .gmap-btn{padding:16px;font-size:15px}
 
-/* ── モーダル ── */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-  display: flex; align-items: center; justify-content: center; z-index: 2000;
-}
-.modal-box {
-  background: white; border-radius: 18px; padding: 32px 36px;
-  width: 500px; max-width: calc(100vw - 40px);
-  box-shadow: 0 24px 64px rgba(0,0,0,0.22);
-}
-.modal-title { font-size: 17px; font-weight: 800; color: #1e293b; margin-bottom: 6px; }
-.modal-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
-.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.modal-full { margin-bottom: 20px; }
-.modal-label { display: block; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
-.modal-cancel { background: #f1f5f9; color: #475569; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.15s; }
-.modal-cancel:hover { background: #e2e8f0; }
-.modal-save { background: #1e3d6e; color: white; border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.15s; }
-.modal-save:hover { background: #172f55; }
-.modal-del { background: #c53030; color: white; border: none; border-radius: 8px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.15s; }
-.modal-del:hover { background: #a32828; }
-.edit-btn {
-  background: none; border: 1.5px solid #cbd5e1; border-radius: 6px;
-  color: #64748b; font-size: 12px; font-weight: 700; padding: 4px 10px;
-  cursor: pointer; transition: all 0.12s; font-family: inherit; margin-right: 6px;
-}
-.edit-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
-
-/* CSV */
-.csv-drop {
-  border: 2px dashed #cbd5e1; border-radius: 10px; padding: 28px;
-  text-align: center; cursor: pointer; transition: all 0.15s; color: #94a3b8; font-size: 14px; line-height: 1.7;
-}
-.csv-drop:hover, .csv-drop.drag-over { border-color: #1e3d6e; background: #edf2fa; color: #1e3d6e; }
-.csv-drop strong { display: block; font-size: 15px; margin-bottom: 4px; color: #475569; }
-.csv-preview { margin-top: 14px; background: #e8f4ee; border: 1px solid #7cbd9c; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #155a35; display: none; align-items: center; justify-content: space-between; gap: 12px; }
-.import-btn { background: #1a6b40; color: white; border: none; border-radius: 7px; padding: 8px 20px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background 0.15s; }
-.import-btn:hover { background: #155a35; }
-.import-btn:disabled { background: #94a3b8; cursor: default; }
-.csv-note { font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.6; }
-
-/* ── 本日の訪問 ── */
-#today-screen { display: none; width: 100%; overflow-y: auto; padding: 28px 32px; }
-.today-inner { max-width: 640px; margin: 0 auto; }
-
-.today-search-box {
-  background: white;
-  border-radius: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.06);
-  margin-bottom: 20px;
-  position: relative;
-}
-.today-search-box h3 { font-size: 13px; font-weight: 700; color: #64748b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
-
-
-.today-input-wrap { position: relative; }
-.today-input {
-  width: 100%; border: 2px solid #e2e8f0; border-radius: 10px;
-  padding: 11px 14px; font-size: 15px; font-family: inherit;
-  outline: none; background: #f8fafc; color: #1e293b; transition: border-color 0.15s;
-}
-.today-input:focus { border-color: #1e3d6e; background: white; }
-.today-input::placeholder { color: #cbd5e1; }
-.today-suggest {
-  position: absolute; top: calc(100% + 2px); left: 0; right: 0;
-  background: white; border: 1.5px solid #1e3d6e; border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.13); z-index: 200; overflow: hidden; display: none;
-}
-
-/* Visit list */
-.visit-list-card {
-  background: white; border-radius: 16px; padding: 20px 24px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.06); margin-bottom: 20px;
-}
-.visit-list-card h3 { font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 14px; }
-
-.visit-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid #f1f5f9;
-}
-.visit-item:last-child { border-bottom: none; }
-.visit-num {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: #1e3d6e; color: white;
-  font-size: 12px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.visit-num.clinic { background: #1a6b40; }
-.visit-info { flex: 1; min-width: 0; }
-.visit-name { font-weight: 700; font-size: 15px; color: #1e293b; }
-.visit-addr { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.visit-del {
-  background: none; border: none; color: #cbd5e1; font-size: 18px;
-  cursor: pointer; padding: 4px; line-height: 1; transition: color 0.12s;
-}
-.visit-del:hover { color: #c53030; }
-
-.clinic-insert-btn {
-  margin-top: 10px; width: 100%;
-  background: #e8f4ee; border: 1.5px solid #7cbd9c; border-radius: 8px;
-  padding: 9px 14px; font-size: 13px; font-weight: 700; color: #1a6b40;
-  cursor: pointer; font-family: inherit; transition: all 0.15s; text-align: left;
-}
-.clinic-insert-btn:hover { background: #d4ecde; border-color: #1a6b40; }
-
-.drag-handle {
-  color: #cbd5e1; cursor: grab; font-size: 18px; padding: 2px 4px;
-  user-select: none; flex-shrink: 0; line-height: 1;
-}
-.drag-handle:active { cursor: grabbing; }
-.drag-placeholder { width: 26px; flex-shrink: 0; }
-.visit-item.dragging { opacity: 0.35; background: #f8fafc; }
-.visit-item.drag-over { background: #edf2fa; border-radius: 8px; outline: 2px dashed #90b7de; }
-
-.calc-btn {
-  width: 100%; background: #1e3d6e; color: white; border: none;
-  border-radius: 12px; padding: 15px; font-size: 15px; font-weight: 800;
-  cursor: pointer; font-family: inherit; transition: all 0.15s;
-  box-shadow: 0 4px 14px rgba(30,61,110,0.25);
-}
-.calc-btn:hover:not(:disabled) { background: #172f55; transform: translateY(-1px); }
-.calc-btn:disabled { background: #e2e8f0; color: #94a3b8; box-shadow: none; cursor: default; transform: none; }
-
-/* Results */
-.result-card {
-  background: white; border-radius: 16px; padding: 24px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.06); margin-top: 20px;
-}
-.result-card h3 { font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
-
-.result-row { display: flex; align-items: flex-start; gap: 12px; }
-.result-stop { flex: 1; }
-.result-stop-name { font-weight: 700; font-size: 15px; color: #1e293b; }
-.result-stop-addr { font-size: 11px; color: #94a3b8; }
-.result-leg {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 0 6px 12px; color: #64748b; font-size: 13px;
-}
-.result-leg-line { width: 2px; background: #e2e8f0; align-self: stretch; margin-left: 11px; }
-.result-time {
-  background: #edf2fa; color: #1e3d6e;
-  border-radius: 6px; padding: 3px 10px;
-  font-size: 13px; font-weight: 700;
-}
-.result-total {
-  margin-top: 16px; padding-top: 14px; border-top: 2px solid #f1f5f9;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.result-total span { font-size: 14px; font-weight: 700; color: #475569; }
-.result-total strong { font-size: 20px; font-weight: 800; color: #1e3d6e; }
-
-.result-error { font-size: 13px; color: #c53030; padding: 8px 0; }
-.calculating { text-align: center; padding: 20px; color: #94a3b8; font-size: 14px; }
-
-/* ▲▼ 並び替えボタン（モバイル用） */
-.move-btns { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
-.move-btn {
-  background: #f1f5f9; border: none; border-radius: 4px;
-  width: 28px; height: 24px; font-size: 11px; cursor: pointer;
-  color: #64748b; display: flex; align-items: center; justify-content: center;
-  transition: background 0.1s;
-}
-.move-btn:hover { background: #e2e8f0; }
-.move-btn:disabled { opacity: 0.25; cursor: default; }
-
-/* ── モバイル最適化 ── */
-@media (max-width: 640px) {
-  body { overflow: auto; }
-
-  header { padding: 0 12px; height: auto; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
-  header h1 { font-size: 14px; }
-  .tabs { gap: 2px; }
-  .tab { padding: 6px 10px; font-size: 12px; }
-  .status-badge { font-size: 11px; }
-  .qr-btn { padding: 4px 8px; font-size: 11px; }
-
-  #route-screen { padding: 16px; align-items: flex-start; }
-  .route-card { padding: 22px 18px; }
-  .route-input { font-size: 16px; }
-  .nav-btn { padding: 15px; font-size: 15px; }
-
-  #today-screen { padding: 16px; }
-  .today-search-box { padding: 16px; }
-  .today-input { font-size: 16px; }
-  .clinic-insert-btn { font-size: 12px; }
-  .visit-list-card { padding: 16px; }
-
-  #manage-screen { padding: 16px; }
-  .manage-inner { max-width: 100%; }
-  .form-row { flex-direction: column; }
-  .add-btn { width: 100%; height: 44px; margin-top: 4px; }
-  .tbl-head { display: none; }
-  .tbl-row { grid-template-columns: 1fr auto; gap: 4px; padding: 12px 16px; }
-  .tbl-addr { display: none; }
-
-  input[type="text"] { font-size: 16px; }
-
-  .modal-box { padding: 24px 20px; }
-  .modal-grid { grid-template-columns: 1fr; }
+  /* 全inputのiOS zoom防止 */
+  input[type="text"],input[type="time"],
+  input[type="date"],input[type="number"],
+  select,textarea{font-size:16px}
 }
 </style>
 </head>
 <body>
 
-<!-- ログイン画面 -->
+<!-- ログイン -->
 <div id="login-screen">
-  <div class="login-card">
-    <h2>🚗 訪問診療ナビ</h2>
-    <p>在宅療養支援クリニック ここはる</p>
+  <div class="login-box">
+    <h1>🚗 訪問スケジューラ</h1>
+    <p>パスワードを入力してください</p>
     <input class="login-input" id="login-input" type="password" placeholder="パスワード" autocomplete="off">
     <button class="login-btn" onclick="checkLogin()">ログイン</button>
-    <div class="login-error" id="login-error"></div>
+    <div id="login-error"></div>
   </div>
 </div>
 
-<!-- モーダル -->
-<div class="modal-overlay" id="modal-overlay" style="display:none" onclick="closeModal(event)">
-  <div class="modal-box" id="modal-box"></div>
-</div>
-
+<!-- ヘッダ -->
 <header>
-  <h1>🚗 訪問診療ナビ</h1>
-  <div class="header-right">
-    <div class="tabs">
-      <button class="tab active" onclick="showTab('route')">ルート検索</button>
-      <button class="tab" onclick="showTab('today')">本日の訪問</button>
-      <button class="tab" onclick="showTab('manage')">患者管理</button>
-    </div>
-    <div class="status-badge">
-      <span class="dot loading" id="dot"></span>
-      <span id="status-txt">接続中...</span>
-    </div>
-    <button class="qr-btn" onclick="showQR()" title="QRコードを表示">QR</button>
-  </div>
+  <div class="brand">🚗 訪問スケジューラ <span style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:4px">v1.1.6</span> <a href="index.html">▶ 訪問診療ナビへ</a></div>
+  <div class="status"><div class="status-dot" id="status-dot"></div><span id="status-text">読込中…</span></div>
+  <span id="save-status" style="font-size:11px;color:#94a3b8"></span>
 </header>
 
 <main>
 
-  <!-- ルート検索 -->
-  <div id="route-screen">
-    <div class="route-card">
-
-      <!-- 出発 -->
-      <div class="route-row">
-        <div class="rlabel-row">
-          <div class="rlabel from">出発</div>
-          <div class="from-btn-group">
-            <button class="clinic-btn" onclick="setCurrentLocation()">📍 現在地から</button>
-            <button class="clinic-btn" onclick="setClinic()">🏥 ここはるから</button>
-          </div>
+  <!-- 今日の条件 -->
+  <div class="card">
+    <div class="card-header">今日の条件</div>
+    <div class="card-body">
+      <div class="cond-grid">
+        <div class="cond-item">
+          <label>担当医</label>
+          <select id="doctor-select" onchange="onDoctorChange()" style="font-size:16px;padding:8px;border:2px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;width:100%">
+            <option value="">（選択）</option>
+          </select>
         </div>
-        <div class="route-input-wrap">
-          <input class="route-input" id="from-input" type="text" placeholder="患者名を入力..." autocomplete="off">
-          <button class="clear-btn" id="from-clear" onclick="clearSlot('from')">✕</button>
-          <div class="suggest-list" id="from-suggest"></div>
+        <div class="cond-item">
+          <label>訪問日</label>
+          <input type="date" id="visit-date" onchange="loadRouteFromSupabase()">
         </div>
-        <div class="raddr" id="from-addr"></div>
-      </div>
-
-      <div class="swap-row">
-        <button class="swap-btn" onclick="swapPatients()" title="出発と到着を入れ替え">⇅</button>
-      </div>
-
-      <!-- 到着 -->
-      <div class="route-row">
-        <div class="rlabel to">到着</div>
-        <div class="route-input-wrap">
-          <input class="route-input" id="to-input" type="text" placeholder="患者名を入力..." autocomplete="off">
-          <button class="clear-btn" id="to-clear" onclick="clearSlot('to')">✕</button>
-          <div class="suggest-list" id="to-suggest"></div>
+        <div class="cond-item">
+          <label>最早出発</label>
+          <input type="time" id="first-min" value="09:30" step="900">
         </div>
-        <div class="raddr" id="to-addr"></div>
+        <div class="cond-item">
+          <label>最初の到着 希望</label>
+          <input type="time" id="first-target" value="10:00" step="900">
+        </div>
+        <div class="cond-item">
+          <label>クリニック帰着 希望</label>
+          <input type="time" id="return-target" value="17:45" step="900">
+        </div>
       </div>
-
-      <button class="nav-btn" id="nav-btn" onclick="openMaps()" disabled>
-        🗺️ Google マップで案内
-      </button>
-
-
+      <div class="cond-row">
+        <label><input type="checkbox" id="lunch-toggle" checked> ここはるで昼休憩</label>
+        <input type="number" id="lunch-duration" value="60" min="30" max="120" step="15"
+          style="width:66px;padding:7px 8px;font-size:14px;border:2px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#1e293b;font-family:inherit">
+        <span style="font-size:13px;color:#64748b">分　<span style="font-size:11px;color:#94a3b8">（11〜14時の間で自動配置）</span></span>
+      </div>
+      <div class="cond-row" style="margin-top:8px">
+        <label><input type="checkbox" id="avoid-tolls"> 有料道路を使わない</label>
+        <div id="maps-usage" style="font-size:11px;color:#94a3b8;margin-left:auto"></div>
+      </div>
     </div>
   </div>
 
-  <!-- 本日の訪問 -->
-  <div id="today-screen">
-    <div class="today-inner">
-
-      <div class="today-search-box">
-        <h3>訪問患者を追加（順番に）</h3>
-        <div class="today-input-wrap">
-          <input class="today-input" id="today-input" type="text" placeholder="患者名を入力して追加..." autocomplete="off">
-          <div class="today-suggest suggest-list" id="today-suggest"></div>
-        </div>
-        <button class="clinic-insert-btn" onclick="addClinicReturn()">🏥 ここはるに戻る（昼休憩など）</button>
+  <!-- 患者選択 -->
+  <div class="card">
+    <div class="card-header">本日の訪問予定</div>
+    <div class="card-body">
+      <div class="search-wrap">
+        <input class="search-input" id="search-input" type="text" placeholder="患者名 / ふりがな / ID で検索..." autocomplete="off">
+        <div class="suggest-list" id="suggest-list"></div>
       </div>
 
-      <div class="visit-list-card" id="visit-list-card" style="display:none">
-        <h3>本日の訪問リスト</h3>
-        <div id="visit-list"></div>
+      <div class="visit-list" id="visit-list">
+        <div class="empty-msg">上の検索ボックスから患者を追加してください</div>
       </div>
 
-      <button class="calc-btn" id="calc-btn" onclick="openFullRoute()" disabled>🗺️ Google Maps で全行程を開く</button>
-
+      <button class="optimize-btn" id="optimize-btn" onclick="optimize()">🪄 最適順に並び替え</button>
     </div>
   </div>
 
-  <!-- 患者管理 -->
-  <div id="manage-screen">
-    <div class="manage-inner">
-
-      <div class="card">
-        <div class="card-header">CSVで一括インポート</div>
-        <div class="card-body">
-          <div class="csv-drop" id="csv-drop" onclick="document.getElementById('csv-file').click()">
-            <strong>CSVファイルをここにドラッグ＆ドロップ</strong>
-            またはクリックしてファイルを選択
-          </div>
-          <input type="file" id="csv-file" accept=".csv" style="display:none">
-          <div class="csv-preview" id="csv-preview">
-            <span id="csv-preview-text"></span>
-            <button class="import-btn" id="import-btn" onclick="importCSV()">インポート実行</button>
-          </div>
-          <div class="csv-note">
-            モバカルのエクスポートCSVをそのまま使えます（名前・フリガナ・郵便番号・住所の列があればOK）<br>
-            ExcelでCSV保存する際は「CSV UTF-8」形式を選んでください
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">患者を追加</div>
-        <div class="card-body">
-          <div class="form-row">
-            <div class="fg">
-              <label>姓</label>
-              <input type="text" id="new-sei" placeholder="田中" autocomplete="off">
-            </div>
-            <div class="fg">
-              <label>名</label>
-              <input type="text" id="new-mei" placeholder="花子" autocomplete="off">
-            </div>
-            <div class="fg">
-              <label>ふりがな（姓）</label>
-              <input type="text" id="new-furi-sei" placeholder="たなか" autocomplete="off">
-            </div>
-            <div class="fg">
-              <label>ふりがな（名）</label>
-              <input type="text" id="new-furi-mei" placeholder="はなこ" autocomplete="off">
-            </div>
-            <div class="fg" style="flex:2">
-              <label>住所</label>
-              <input type="text" id="new-addr" placeholder="例：福岡市早良区..." autocomplete="off">
-            </div>
-            <button class="add-btn" id="add-btn" onclick="addPatient()">＋ 追加</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div style="padding:14px 20px 4px;font-size:13px;font-weight:700;color:#64748b">
-          登録患者：<span id="patient-count" style="color:#1e3d6e;font-size:16px">0</span> 人
-        </div>
-        <div class="tbl-head"><div>患者名</div><div>住所</div><div></div></div>
-        <div id="patient-list"></div>
-      </div>
-
+  <!-- 結果 -->
+  <div class="card" id="result-card" style="display:none">
+    <div class="card-header">最適化結果</div>
+    <div class="card-body">
+      <div id="result-body"></div>
+      <a class="gmap-btn" id="gmap-btn" href="#" target="_blank">📱 Google マップで経路を開く</a>
     </div>
   </div>
 
 </main>
 
+<!-- 患者制約エディタ -->
+<div id="editor-overlay" style="display:none" onclick="editorBgClick(event)">
+  <div id="editor-modal">
+    <div class="editor-hd">
+      <div>
+        <div class="editor-hd-title" id="ed-name"></div>
+        <div class="editor-hd-sub" id="ed-sub"></div>
+      </div>
+      <button class="editor-close" onclick="closeEditor()">✕</button>
+    </div>
+    <div class="editor-body" id="ed-body"></div>
+    <div class="editor-ft">
+      <button class="ed-cancel" onclick="closeEditor()">キャンセル</button>
+      <button class="ed-save" id="ed-save-btn" onclick="saveEditor()">保存</button>
+    </div>
+  </div>
+</div>
+<div id="toast-msg"></div>
+
 <script>
+/* ============================================================
+   訪問スケジューラ
+============================================================ */
+
+/* ── 認証情報（既存の訪問診療ナビと共通） ── */
 const SUPABASE_URL = 'https://hnsvhvhuxcyctblkahga.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhuc3Zodmh1eGN5Y3RibGthaGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NDExMDAsImV4cCI6MjA5NDExNzEwMH0.SYBiFwnOOoZibXrdEkP-afVOlIv2y1P_qYgxLn94YsA';
-
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let patients = [];
-let fromPatient = null;
-let toPatient   = null;
+/* ── Google Maps API（JS SDK 経由 → CORS 不要） ── */
+// DistanceMatrixService を使うので REST fetch は行わない
 
-/* ── データ ── */
-async function load() {
-  const { data, error } = await db.from('patients').select('*')
-    .order('sort_order').order('created_at');
-  if (error) { setStatus('err', '接続エラー'); return; }
-  setStatus('ok', '同期中');
-  patients = data || [];
-  renderList();
-}
-
-async function addPatient() {
-  const sei  = document.getElementById('new-sei').value.trim();
-  const mei  = document.getElementById('new-mei').value.trim();
-  const addr = document.getElementById('new-addr').value.trim();
-  if (!sei || !addr) { alert('姓と住所を入力してください'); return; }
-  const name     = mei ? `${sei} ${mei}` : sei;
-  const furiSei  = document.getElementById('new-furi-sei').value.trim();
-  const furiMei  = document.getElementById('new-furi-mei').value.trim();
-  const furigana = [furiSei, furiMei].filter(Boolean).join(' ');
-  const btn = document.getElementById('add-btn');
-  btn.disabled = true; btn.textContent = '追加中...';
-  const { error } = await db.from('patients').insert({ name, address: addr, furigana });
-  btn.disabled = false; btn.textContent = '＋ 追加';
-  if (error) { alert('追加に失敗しました\n' + error.message); return; }
-  ['new-sei','new-mei','new-furi-sei','new-furi-mei','new-addr'].forEach(id =>
-    document.getElementById(id).value = '');
-  await load();
-}
-
-
-db.channel('patients')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, load)
-  .subscribe();
-
-/* ── ステータス ── */
-function setStatus(state, text) {
-  document.getElementById('dot').className = 'dot' + (state === 'ok' ? '' : state === 'err' ? ' err' : ' loading');
-  document.getElementById('status-txt').textContent = text;
-}
-
-/* ── タブ ── */
-function showTab(tab) {
-  document.getElementById('route-screen').style.display  = tab === 'route'  ? 'flex'  : 'none';
-  document.getElementById('today-screen').style.display  = tab === 'today'  ? 'block' : 'none';
-  document.getElementById('manage-screen').style.display = tab === 'manage' ? 'block' : 'none';
-  document.querySelectorAll('.tab').forEach((el, i) =>
-    el.classList.toggle('active', ['route','today','manage'][i] === tab));
-}
-
-/* ── オートコンプリート ── */
-function toHira(s) {
-  return (s || '').replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
-}
-
-function matchQ(p, q) {
-  const norm  = s => toHira(s).replace(/[\s　]/g, '');
-  const nq    = norm(q);
-  return p.name.replace(/[\s　]/g, '').includes(q.replace(/[\s　]/g, '')) ||
-         norm(p.furigana || '').startsWith(nq) ||
-         norm(p.furigana || '').includes(nq);
-}
-
-function setupAutocomplete(slot) {
-  const input   = document.getElementById(`${slot}-input`);
-  const sugList = document.getElementById(`${slot}-suggest`);
-  let idx = -1;
-
-  input.addEventListener('input', () => {
-    idx = -1;
-    const q = input.value.trim();
-    if (!q) { sugList.style.display = 'none'; return; }
-
-    const hits = patients.filter(p => matchQ(p, q)).slice(0, 8);
-    if (hits.length === 0) {
-      sugList.innerHTML = '<div class="suggest-empty">該当なし</div>';
-      sugList.style.display = 'block';
-      return;
-    }
-
-    sugList.innerHTML = hits.map(p => {
-      const hq   = toHira(input.value.trim());
-      const hira = toHira(p.furigana || '');
-      const hiName = esc(p.name).replace(esc(input.value.trim()), m => `<mark>${m}</mark>`);
-      const hiFuri = hira ? esc(hira).replace(esc(hq), m => `<mark>${m}</mark>`) : '';
-      return `<div class="suggest-item" data-id="${p.id}">
-        <div class="s-name">${hiName}</div>
-        ${hiFuri ? `<div class="s-furi">${hiFuri}</div>` : ''}
-        <div class="s-addr">${esc(p.address)}</div>
-      </div>`;
-    }).join('');
-
-    sugList.querySelectorAll('.suggest-item').forEach(el => {
-      el.addEventListener('mousedown', e => {
-        e.preventDefault();
-        const p = patients.find(x => x.id === el.dataset.id);
-        if (p) selectPatient(slot, p);
-      });
-    });
-
-    sugList.style.display = 'block';
-  });
-
-  input.addEventListener('keydown', e => {
-    const items = sugList.querySelectorAll('.suggest-item');
-    if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx+1, items.length-1); highlightSuggest(items, idx); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx-1, 0); highlightSuggest(items, idx); }
-    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx]?.dispatchEvent(new MouseEvent('mousedown')); }
-    else if (e.key === 'Escape') { sugList.style.display = 'none'; }
-  });
-
-  input.addEventListener('blur', () => setTimeout(() => { sugList.style.display = 'none'; }, 150));
-}
-
-function highlightSuggest(items, idx) {
-  items.forEach((el, i) => el.classList.toggle('active', i === idx));
-}
-
-function selectPatient(slot, p) {
-  if (slot === 'from') {
-    fromPatient = p;
-    const el = document.getElementById('from-input');
-    el.value = p.name;
-    el.classList.remove('selected-to'); el.classList.add('selected-from');
-    document.getElementById('from-addr').textContent = p.address;
-    document.getElementById('from-clear').classList.add('visible');
-  } else {
-    toPatient = p;
-    const el = document.getElementById('to-input');
-    el.value = p.name;
-    el.classList.remove('selected-from'); el.classList.add('selected-to');
-    document.getElementById('to-addr').textContent = p.address;
-    document.getElementById('to-clear').classList.add('visible');
-  }
-  document.getElementById(`${slot}-suggest`).style.display = 'none';
-  updateNavBtn();
-}
-
-function clearSlot(slot) {
-  if (slot === 'from') { fromPatient = null; }
-  else                 { toPatient = null; }
-  const el = document.getElementById(`${slot}-input`);
-  el.value = '';
-  el.className = 'route-input';
-  document.getElementById(`${slot}-addr`).textContent = '';
-  document.getElementById(`${slot}-clear`).classList.remove('visible');
-  updateNavBtn();
-}
-
-function swapPatients() {
-  const tmp = fromPatient;
-  fromPatient = toPatient;
-  toPatient   = tmp;
-  if (fromPatient) selectPatient('from', fromPatient);
-  else clearSlot('from');
-  if (toPatient)   selectPatient('to', toPatient);
-  else clearSlot('to');
-}
-
-function updateNavBtn() {
-  document.getElementById('nav-btn').disabled = !fromPatient || !toPatient;
-}
-
-function openMaps() {
-  if (!fromPatient || !toPatient) return;
-  const d = encodeURIComponent(toPatient.address);
-  let url = `https://www.google.com/maps/dir/?api=1&destination=${d}&travelmode=driving`;
-  // 現在地から出発の場合は origin を省略 → Google マップが現在地を使用
-  if (fromPatient.id !== '__current__') {
-    url += `&origin=${encodeURIComponent(fromPatient.address)}`;
-  }
-  window.open(url, '_blank');
-}
-
-/* ── 患者一覧描画 ── */
-function renderList() {
-  const list = document.getElementById('patient-list');
-  const countEl = document.getElementById('patient-count');
-  if (countEl) countEl.textContent = patients.length;
-  if (patients.length === 0) {
-    list.innerHTML = '<div class="empty-msg">まだ患者が登録されていません</div>';
-    return;
-  }
-  const sorted = [...patients].sort((a, b) =>
-    (a.furigana || a.name).localeCompare(b.furigana || b.name, 'ja'));
-  list.innerHTML = sorted.map(p => `
-    <div class="tbl-row">
-      <div class="tbl-name">${esc(p.name)}<div style="font-size:11px;color:#94a3b8">${esc(p.furigana||'')}</div></div>
-      <div class="tbl-addr">${esc(p.address)}</div>
-      <div style="display:flex;gap:4px;justify-content:flex-end">
-        <button class="edit-btn" data-id="${p.id}">編集</button>
-        <button class="del-btn" data-id="${p.id}">削除</button>
-      </div>
-    </div>
-  `).join('');
-  list.querySelectorAll('.edit-btn').forEach(btn =>
-    btn.addEventListener('click', () => showEditModal(btn.dataset.id)));
-  list.querySelectorAll('.del-btn').forEach(btn =>
-    btn.addEventListener('click', () => showDeleteConfirm(btn.dataset.id)));
-}
-
-/* ── モーダル ── */
-function closeModal(e) {
-  if (e && e.target !== document.getElementById('modal-overlay')) return;
-  document.getElementById('modal-overlay').style.display = 'none';
-}
-
-function showDeleteConfirm(id) {
-  const p = patients.find(x => x.id === id);
-  if (!p) return;
-  document.getElementById('modal-box').innerHTML = `
-    <div class="modal-title">患者を削除しますか？</div>
-    <div class="modal-sub">「${esc(p.name)}」を削除します。この操作は取り消せません。</div>
-    <div class="modal-actions">
-      <button class="modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">キャンセル</button>
-      <button class="modal-del" onclick="confirmDelete('${id}')">削除する</button>
-    </div>`;
-  document.getElementById('modal-overlay').style.display = 'flex';
-}
-
-async function confirmDelete(id) {
-  document.getElementById('modal-overlay').style.display = 'none';
-  if (fromPatient?.id === id) clearSlot('from');
-  if (toPatient?.id === id) clearSlot('to');
-  await db.from('patients').delete().eq('id', id);
-  await load();
-}
-
-function showEditModal(id) {
-  const p = patients.find(x => x.id === id);
-  if (!p) return;
-  const [sei, ...meiParts] = p.name.split(/\s+/);
-  const mei = meiParts.join(' ');
-  const [furiSei, ...furiMeiParts] = (p.furigana || '').split(/\s+/);
-  const furiMei = furiMeiParts.join(' ');
-  const inp = `width:100%;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 11px;font-size:14px;font-family:inherit;outline:none;color:#1e293b;background:#f8fafc`;
-  document.getElementById('modal-box').innerHTML = `
-    <div class="modal-title">患者情報を編集</div>
-    <div class="modal-grid">
-      <div><span class="modal-label">姓</span><input id="e-sei" style="${inp}" value="${esc(sei||'')}"></div>
-      <div><span class="modal-label">名</span><input id="e-mei" style="${inp}" value="${esc(mei||'')}"></div>
-      <div><span class="modal-label">ふりがな（姓）</span><input id="e-fsei" style="${inp}" value="${esc(furiSei||'')}"></div>
-      <div><span class="modal-label">ふりがな（名）</span><input id="e-fmei" style="${inp}" value="${esc(furiMei||'')}"></div>
-    </div>
-    <div class="modal-full"><span class="modal-label">住所</span><input id="e-addr" style="${inp}" value="${esc(p.address)}"></div>
-    <div class="modal-actions">
-      <button class="modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">キャンセル</button>
-      <button class="modal-save" onclick="saveEdit('${id}')">保存する</button>
-    </div>`;
-  document.getElementById('modal-overlay').style.display = 'flex';
-}
-
-async function saveEdit(id) {
-  const sei  = document.getElementById('e-sei').value.trim();
-  const mei  = document.getElementById('e-mei').value.trim();
-  const fsei = document.getElementById('e-fsei').value.trim();
-  const fmei = document.getElementById('e-fmei').value.trim();
-  const addr = document.getElementById('e-addr').value.trim();
-  if (!sei || !addr) { alert('姓と住所は必須です'); return; }
-  const name     = mei ? `${sei} ${mei}` : sei;
-  const furigana = [fsei, fmei].filter(Boolean).join(' ');
-  document.getElementById('modal-overlay').style.display = 'none';
-  await db.from('patients').update({ name, furigana, address: addr, lat: null, lng: null }).eq('id', id);
-  await load();
-}
-
-/* ── CSV インポート ── */
-let csvRows = [];
-
-function setupCSV() {
-  const fileInput = document.getElementById('csv-file');
-  const drop = document.getElementById('csv-drop');
-  fileInput.addEventListener('change', e => parseCSVFile(e.target.files[0]));
-  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
-  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
-  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); parseCSVFile(e.dataTransfer.files[0]); });
-}
-
-function parseCSVFile(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const buf = e.target.result;
-    let text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
-    if ((text.match(/�/g) || []).length > 3) {
-      try { text = new TextDecoder('shift-jis').decode(buf); } catch(e) {}
-    }
-
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) { alert('データが見つかりません'); return; }
-
-    const cols = splitCSVLine(lines[0]).map(c => c.trim());
-    const NAME_KEYS = ['名前','氏名','患者名','お名前','name'];
-    const ADDR_KEYS = ['住所','address','所在地'];
-    const FURI_KEYS = ['フリガナ','ふりがな','読み','かな','furigana'];
-
-    const ni = cols.findIndex(c => NAME_KEYS.some(k => c.includes(k)));
-    const ai = cols.findIndex(c => ADDR_KEYS.some(k => c.includes(k)));
-    const fi = cols.findIndex(c => FURI_KEYS.some(k => c.includes(k)));
-
-    if (ni === -1) { alert(`名前の列が見つかりません。\n検出された列：${cols.join('、')}`); return; }
-    if (ai === -1) { alert(`住所の列が見つかりません。\n検出された列：${cols.join('、')}`); return; }
-
-    csvRows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cells = splitCSVLine(lines[i]);
-      const name     = (cells[ni] || '').trim();
-      const address  = (cells[ai] || '').trim();
-      const furigana = fi >= 0 ? (cells[fi] || '').trim() : '';
-      if (name && address) csvRows.push({ name, address, furigana });
-    }
-
-    if (csvRows.length === 0) { alert('有効なデータが見つかりませんでした'); return; }
-
-    const furiMsg = fi >= 0 ? `・フリガナあり` : '';
-    document.getElementById('csv-preview-text').textContent = `${csvRows.length}件を検出${furiMsg}`;
-    document.getElementById('csv-preview').style.display = 'flex';
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function splitCSVLine(line) {
-  const result = []; let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') inQ = !inQ;
-    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-    else cur += c;
-  }
-  result.push(cur);
-  return result;
-}
-
-async function importCSV() {
-  if (csvRows.length === 0) return;
-  const btn = document.getElementById('import-btn');
-  btn.disabled = true;
-  let done = 0;
-  const CHUNK = 50;
-  for (let i = 0; i < csvRows.length; i += CHUNK) {
-    const { error } = await db.from('patients').insert(csvRows.slice(i, i + CHUNK));
-    if (error) { alert(`エラー（${done}件処理済み）\n${error.message}`); break; }
-    done += Math.min(CHUNK, csvRows.length - i);
-    btn.textContent = `${done}/${csvRows.length}件...`;
-  }
-  btn.disabled = false; btn.textContent = 'インポート実行';
-  document.getElementById('csv-preview').style.display = 'none';
-  document.getElementById('csv-file').value = '';
-  csvRows = [];
-  alert(`${done}件のインポートが完了しました。`);
-  await load();
-}
-
-/* ── クリニック ── */
+/* ── 定数 ── */
 const CLINIC = {
   name: '在宅療養支援クリニック ここはる',
-  address: '福岡県福岡市城南区南片江１丁目２４'
+  address: '福岡県福岡市城南区南片江１丁目２４',
+  lat: 33.5648, lng: 130.3608
 };
+const DAY_NAMES = ['日','月','火','水','木','金','土'];
 
-function setClinic() {
-  const el = document.getElementById('from-input');
-  el.value = CLINIC.name;
-  el.className = 'route-input selected-from';
-  document.getElementById('from-addr').textContent = CLINIC.address;
-  document.getElementById('from-clear').classList.add('visible');
-  fromPatient = { id: '__clinic__', name: CLINIC.name, address: CLINIC.address };
-  document.getElementById('from-suggest').style.display = 'none';
-  updateNavBtn();
+let patients = [];          // scheduler_patients 全件
+let todayList = [];         // 今日の訪問対象（{patient, duration}）
+let distanceCache = null;   // 直近の距離行列
+let overrideEditing = new Set(); // 編集中のoverride（external_id）
+let lastResult = null;      // 最後の最適化結果
+let currentDoctor = '';     // 選択中の担当医
+let autoSaveTimer = null;   // 自動保存タイマー
+
+/* ── 今日だけ制約 localStorage 管理 ── */
+function todayOverrideKey() {
+  const d = new Date();
+  return `today_override_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}_${String(d.getDate()).padStart(2,'0')}`;
+}
+function cleanOldOverrides() {
+  const today = todayOverrideKey();
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('today_override_') && k !== today)
+    .forEach(k => localStorage.removeItem(k));
+}
+function loadOverrides() {
+  try { return JSON.parse(localStorage.getItem(todayOverrideKey()) || '{}'); }
+  catch { return {}; }
+}
+function saveOverrides(ov) {
+  localStorage.setItem(todayOverrideKey(), JSON.stringify(ov));
+}
+// 今日だけ設定: 編集中ドラフト管理
+const overrideDraft = new Map(); // id → [{type:'ok'|'ng', start:'HH:MM', end:'HH:MM'}]
+
+function _ovNormalize(ov) {
+  // 旧フォーマット {from,to} → 新フォーマット {windows:[...]} に統一
+  if (!ov) return null;
+  if (ov.windows) return ov;
+  if (ov.from && ov.to) return { windows: [{ type: 'ok', start: ov.from, end: ov.to }] };
+  return null;
+}
+function clearTodayOverride(id) {
+  const ov = loadOverrides();
+  delete ov[id];
+  saveOverrides(ov);
+  renderTodayList();
+  scheduleAutoSave();
+}
+function startOverrideEdit(id) {
+  const existing = _ovNormalize(loadOverrides()[id]);
+  const initWindows = existing?.windows?.length
+    ? existing.windows.map(w => ({ ...w }))
+    : [{ type: 'ok', start: '09:00', end: '17:00' }];
+  overrideDraft.set(id, initWindows);
+  overrideEditing.add(id);
+  renderTodayList();
+  setTimeout(() => document.getElementById(`ov-sh-${id}-0`)?.focus(), 50);
+}
+function cancelOverrideEdit(id) {
+  overrideEditing.delete(id);
+  overrideDraft.delete(id);
+  renderTodayList();
+}
+function addTodayOvRow(id) {
+  const draft = overrideDraft.get(id) || [];
+  draft.push({ type: 'ok', start: '09:00', end: '17:00' });
+  overrideDraft.set(id, draft);
+  renderTodayList();
+}
+function removeTodayOvRow(id, idx) {
+  const draft = overrideDraft.get(id) || [];
+  draft.splice(idx, 1);
+  if (draft.length === 0) draft.push({ type: 'ok', start: '09:00', end: '17:00' });
+  overrideDraft.set(id, draft);
+  renderTodayList();
+}
+function confirmOverrideEdit(id) {
+  const draft = overrideDraft.get(id) || [];
+  const windows = [];
+  for (let i = 0; i < draft.length; i++) {
+    const type  = document.getElementById(`ov-type-${id}-${i}`)?.value || 'ok';
+    const sh    = document.getElementById(`ov-sh-${id}-${i}`)?.value;
+    const sm    = document.getElementById(`ov-sm-${id}-${i}`)?.value || '00';
+    const eh    = document.getElementById(`ov-eh-${id}-${i}`)?.value;
+    const em    = document.getElementById(`ov-em-${id}-${i}`)?.value || '00';
+    if (!sh || !eh) continue;
+    const start = `${sh}:${sm}`, end = `${eh}:${em}`;
+    if (timeToMin(start) >= timeToMin(end)) { alert(`${i+1}行目：終了は開始より後にしてください`); return; }
+    windows.push({ type, start, end });
+  }
+  if (!windows.length) { alert('有効な時間を入力してください'); return; }
+  const ov = loadOverrides();
+  ov[id] = { windows };
+  saveOverrides(ov);
+  overrideEditing.delete(id);
+  overrideDraft.delete(id);
+  renderTodayList();
+  scheduleAutoSave();
 }
 
-function setCurrentLocation() {
-  const el = document.getElementById('from-input');
-  el.value = '現在地';
-  el.className = 'route-input selected-from';
-  document.getElementById('from-addr').textContent = 'Google マップで現在地を使用します';
-  document.getElementById('from-clear').classList.add('visible');
-  fromPatient = { id: '__current__', name: '現在地', address: '' };
-  document.getElementById('from-suggest').style.display = 'none';
-  updateNavBtn();
+/* ── ステータス表示 ── */
+function setStatus(kind, text) {
+  document.getElementById('status-dot').className = 'status-dot ' + (kind === 'ok' ? 'ok' : kind === 'err' ? 'err' : '');
+  document.getElementById('status-text').textContent = text;
 }
-
-
-/* ── ユーティリティ ── */
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-[['new-sei','new-mei'],['new-mei','new-furi-sei'],['new-furi-sei','new-furi-mei'],['new-furi-mei','new-addr']].forEach(([from,to]) => {
-  document.getElementById(from).addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById(to).focus();
-  });
-});
-document.getElementById('new-addr').addEventListener('keydown', e => {
-  if (e.key === 'Enter') addPatient();
-});
 
 /* ── ログイン ── */
 async function checkLogin() {
@@ -1190,36 +494,122 @@ async function checkLogin() {
     setTimeout(() => input.classList.remove('error'), 400);
   } else {
     document.getElementById('login-screen').style.display = 'none';
-    load();
+    init();
   }
 }
-
 document.getElementById('login-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') checkLogin();
 });
 
-(async () => {
-  const { data: { session } } = await db.auth.getSession();
-  if (session) {
-    document.getElementById('login-screen').style.display = 'none';
+/* ── 初期化 ── */
+async function init() {
+  // 訪問日のデフォルトは今日
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  document.getElementById('visit-date').value = `${yyyy}-${mm}-${dd}`;
+
+  cleanOldOverrides();
+  await loadPatients();
+  setupSearch();
+  renderTodayList();
+  await loadMapsUsage();
+  await gcpInitDisplay();
+  buildDoctorSelect();
+}
+
+async function loadPatients() {
+  setStatus('', '読込中…');
+  const { data, error } = await db.from('scheduler_patients').select('*');
+  if (error) {
+    setStatus('err', '接続エラー: ' + error.message);
+    return;
   }
-})();
+  patients = data || [];
+  setStatus('ok', `${patients.length}人 読込済み`);
+}
 
-/* ── 本日の訪問 ── */
-let todayList = [];
-let clinicStart = true;
+/* ── ユーティリティ ── */
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
-const CLINIC_ENTRY = {
-  id: '__clinic__',
-  name: '在宅療養支援クリニック ここはる',
-  address: '福岡県福岡市城南区南片江１丁目２４',
-  lat: 33.5648, lng: 130.3608
-};
+function normalizeQuery(q) {
+  return q.toLowerCase()
+    .replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))  // カナ→ひら
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))  // 全角→半角
+    .replace(/[\s　 ・·・]+/g, '');  // 半角・全角・NBSP・中点を除去
+}
 
+function matchPatient(p, q) {
+  const nq = normalizeQuery(q);
+  return normalizeQuery(p.name).includes(nq) ||
+         (p.furigana && normalizeQuery(p.furigana).includes(nq)) ||
+         (p.external_id && String(p.external_id).includes(q.trim()));
+}
 
-function setupTodayAutocomplete() {
-  const input = document.getElementById('today-input');
-  const sug   = document.getElementById('today-suggest');
+function getDayName(dateStr) {
+  const d = new Date(dateStr);
+  return DAY_NAMES[d.getDay()];
+}
+
+/* 推奨診察時間を取得（優先順：DBのvisit_duration_min → memo_parsedのnotes → デフォルト25分） */
+function extractDuration(patient) {
+  // DBに直接登録された診察時間を最優先
+  if (patient.visit_duration_min) return patient.visit_duration_min;
+  const mp = patient.memo_parsed;
+  if (!mp) return 25;
+  const notes = (mp.notes || '').toString();
+  const m = notes.match(/(\d{2,3})\s*分(確保|設定|必要)/);
+  if (m) return parseInt(m[1]);
+  return 25;
+}
+
+/* 患者の制約サマリーを 1 行に */
+function condSummary(memo_parsed) {
+  if (!memo_parsed) return '<span style="color:#94a3b8">制約なし</span>';
+  const parts = [];
+  if (memo_parsed.available === 'free') return '<span style="color:#94a3b8">終日可</span>';
+  if (memo_parsed.fixed_time) parts.push(`<span class="fixed">⭐ ${memo_parsed.fixed_time}固定</span>`);
+  if (memo_parsed.ng_days && memo_parsed.ng_days.length) parts.push(`<span class="ng">${memo_parsed.ng_days.join('')}不可</span>`);
+  if (memo_parsed.preferred_days && memo_parsed.preferred_days.length) parts.push(`${memo_parsed.preferred_days.join('')}希望`);
+  if (memo_parsed.preferred_time === 'morning') parts.push('午前希望');
+  else if (memo_parsed.preferred_time === 'afternoon') parts.push('午後希望');
+  else if (memo_parsed.preferred_time === 'before11') parts.push('11時まで');
+  else if (memo_parsed.preferred_time === 'after14') parts.push('14時以降');
+  // NG時間帯・OK時間帯も表示
+  const ngw = memo_parsed.ng_windows || [];
+  const okw = memo_parsed.ok_windows || [];
+  if (ngw.length) {
+    const uniq = [...new Set(ngw.map(w => w.day === '全' ? '全日' : w.day))].join('');
+    parts.push(`<span class="ng">NG枠${ngw.length}件(${uniq})</span>`);
+  }
+  if (okw.length) {
+    // 曜日ごとにグループ化して表示
+    // 1枠のみ → 「全日09:00〜11:00のみ」
+    // 複数枠  → 「全日09:00〜11:00・16:30〜可」
+    const byDay = {};
+    for (const w of okw) {
+      const d = w.day === '全' ? '全日' : w.day;
+      if (!byDay[d]) byDay[d] = [];
+      const end = w.end && w.end !== '23:59' ? `〜${w.end}` : '〜';
+      byDay[d].push(`${w.start}${end}`);
+    }
+    const totalWindows = okw.length;
+    const okStrs = Object.entries(byDay).map(([d, times]) => `${d}${times.join('・')}`);
+    const suffix = totalWindows === 1 ? 'のみ' : '可';
+    parts.push(`${okStrs.join('、')}${suffix}`);
+  }
+  if (memo_parsed.week_pattern) parts.push(memo_parsed.week_pattern);
+  if (memo_parsed.needs_review) parts.push('<span class="ng">⚠️要確認</span>');
+  return parts.length ? parts.join(' / ') : '<span style="color:#94a3b8">制約なし</span>';
+}
+
+/* ── 検索オートコンプリート（iOS Safari 対応版） ── */
+function setupSearch() {
+  const input = document.getElementById('search-input');
+  const sug = document.getElementById('suggest-list');
   let idx = -1;
   let selecting = false;
 
@@ -1227,36 +617,68 @@ function setupTodayAutocomplete() {
     idx = -1;
     const q = input.value.trim();
     if (!q) { sug.style.display = 'none'; return; }
-    const hits = patients.filter(p => matchQ(p, q)).slice(0, 8);
-    if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
+
+    const usedIds = new Set(todayList.map(t => t.patient.external_id));
+
+    let hits = patients.filter(p =>
+      !usedIds.has(p.external_id) &&
+      matchPatient(p, q)
+    ).slice(0, 12);
+
+    if (!hits.length) {
+      sug.innerHTML = '<div class="suggest-empty">該当なし</div>';
+      sug.style.display = 'block';
+      return;
+    }
+
     sug.innerHTML = hits.map(p => {
-      const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
-      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></div>`;
+      const hi = esc(p.name).replace(new RegExp(esc(q), 'gi'), m => `<mark>${m}</mark>`);
+      const idStr = p.external_id ? String(p.external_id) : '';
+      const idHi = idStr ? idStr.replace(new RegExp(esc(q.trim()), 'g'), m => `<mark>${m}</mark>`) : '';
+      const meta = [p.furigana || '', p.address || ''].filter(Boolean).join(' / ');
+      return `<div class="suggest-item" data-id="${p.external_id}" style="display:flex;align-items:center">
+        <div style="flex:1;pointer-events:none">
+          <div class="s-name">${hi}${idHi ? `<span style="font-size:11px;color:#94a3b8;margin-left:6px">ID: ${idHi}</span>` : ''}</div>
+          <div class="s-meta">${esc(meta)}</div>
+        </div>
+        <button class="s-edit-btn" data-edit-id="${p.external_id}" title="制約を編集">✏️</button>
+      </div>`;
     }).join('');
+
     sug.querySelectorAll('.suggest-item').forEach(el => {
-      el.addEventListener('touchstart', e => {
-        e.preventDefault(); // iOS: タップで input が first responder を失わないように既定動作を抑止
-        selecting = true;
-      }, { passive: false });
+      // ✏️ ボタン：追加せずエディタを開く
+      const editBtn = el.querySelector('.s-edit-btn');
+      if (editBtn) {
+        editBtn.addEventListener('touchstart', e => { e.stopPropagation(); e.preventDefault(); }, { passive: false });
+        editBtn.addEventListener('touchend', e => {
+          e.stopPropagation(); e.preventDefault();
+          const p = patients.find(x => x.external_id === editBtn.dataset.editId);
+          if (p) openEditor(p);
+        });
+        editBtn.addEventListener('mousedown', e => e.stopPropagation());
+        editBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const p = patients.find(x => x.external_id === editBtn.dataset.editId);
+          if (p) openEditor(p);
+        });
+      }
+
+      // 患者行本体：リストに追加
+      el.addEventListener('touchstart', e => { e.preventDefault(); selecting = true; }, { passive: false });
       el.addEventListener('touchend', e => {
-        e.preventDefault(); // synthetic mouse/click を発火させない
-        const p = patients.find(x => x.id === el.dataset.id);
-        // DOM mutation の前にユーザージェスチャー内で focus を確立
+        e.preventDefault();
+        const p = patients.find(x => x.external_id === el.dataset.id);
         input.focus();
-        if (p) addToToday(p);
+        if (p) addPatientToToday(p);
         input.value = '';
         sug.style.display = 'none';
         selecting = false;
       });
-      el.addEventListener('mousedown', e => {
-        e.preventDefault(); // デスクトップ: blur を防ぐ
-        selecting = true;
-      });
+      el.addEventListener('mousedown', e => { e.preventDefault(); selecting = true; });
       el.addEventListener('click', () => {
-        // デスクトップのみ到達
-        const p = patients.find(x => x.id === el.dataset.id);
+        const p = patients.find(x => x.external_id === el.dataset.id);
         input.focus();
-        if (p) addToToday(p);
+        if (p) addPatientToToday(p);
         input.value = '';
         sug.style.display = 'none';
         selecting = false;
@@ -1267,147 +689,1930 @@ function setupTodayAutocomplete() {
 
   input.addEventListener('keydown', e => {
     const items = sug.querySelectorAll('.suggest-item');
-    if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx+1, items.length-1); items.forEach((el,i) => el.classList.toggle('active', i===idx)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx-1, 0); items.forEach((el,i) => el.classList.toggle('active', i===idx)); }
-    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx]?.dispatchEvent(new Event('click')); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(idx + 1, items.length - 1); items.forEach((el, i) => el.classList.toggle('active', i === idx)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(idx - 1, 0); items.forEach((el, i) => el.classList.toggle('active', i === idx)); }
+    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); items[idx]?.click(); }
     else if (e.key === 'Escape') sug.style.display = 'none';
   });
 
   input.addEventListener('blur', () => {
     setTimeout(() => { if (!selecting) sug.style.display = 'none'; }, 300);
   });
+
+
 }
 
-function addToToday(p) {
-  todayList.push({ ...p });
+/* ── 今日の訪問予定 ── */
+function addPatientToToday(p) {
+  const duration = extractDuration(p);
+  todayList.push({ patient: p, duration });
   renderTodayList();
+  // 結果カードはクリア
+  document.getElementById('result-card').style.display = 'none';
+  scheduleAutoSave();
 }
 
-function addClinicReturn() {
-  todayList.push({ ...CLINIC_ENTRY });
+function removePatient(idx) {
+  todayList.splice(idx, 1);
   renderTodayList();
+  document.getElementById('result-card').style.display = 'none';
+  scheduleAutoSave();
 }
 
-function moveVisit(idx, dir) {
-  const newIdx = idx + dir;
-  if (newIdx < 0 || newIdx >= todayList.length) return;
-  [todayList[idx], todayList[newIdx]] = [todayList[newIdx], todayList[idx]];
-  renderTodayList();
-}
-
-function removeFromToday(i) {
-  todayList.splice(i, 1);
-  renderTodayList();
+function updateDuration(idx, val) {
+  const n = parseInt(val);
+  if (isNaN(n) || n < 5 || n > 180) return;
+  todayList[idx].duration = n;
+  scheduleAutoSave();
 }
 
 function renderTodayList() {
-  const card = document.getElementById('visit-list-card');
   const list = document.getElementById('visit-list');
-  const btn  = document.getElementById('calc-btn');
-  const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
+  if (todayList.length === 0) {
+    list.innerHTML = '<div class="empty-msg">上の検索ボックスから患者を追加してください</div>';
+    return;
+  }
+  const overrides = loadOverrides();
+  list.innerHTML = todayList.map((t, i) => {
+    const id = t.patient.external_id;
+    const ov = overrides[id];
+    const editing = overrideEditing.has(id);
 
-  if (fullList.length === 0) { card.style.display = 'none'; btn.disabled = true; return; }
-  card.style.display = 'block';
-  btn.disabled = fullList.length < 2;
+    // 制約表示：オーバーライドがあれば通常制約の代わりに表示
+    const ovNorm = _ovNormalize(ov);
+    let condHTML;
+    if (ovNorm?.windows?.length) {
+      const winLabels = ovNorm.windows.map(w => {
+        const color = w.type === 'ng' ? '#c53030' : '#1a6b40';
+        const label = w.type === 'ng' ? 'NG' : 'OK';
+        return `<span style="color:${color};font-weight:700">${label}: ${w.start}〜${w.end}</span>`;
+      }).join('<span style="color:#94a3b8;margin:0 3px">／</span>');
+      condHTML = `<span style="font-size:11px">🕐 今日: ${winLabels}</span><span style="color:#94a3b8;font-size:10px;margin-left:4px">（通常制約を無視）</span>`;
+    } else {
+      condHTML = condSummary(t.patient.memo_parsed);
+    }
 
-  const mobile = window.innerWidth <= 640 || ('ontouchstart' in window);
-  list.innerHTML = fullList.map((p, i) => {
-    const isFixed = i === 0 && clinicStart;
-    const tidx = i - (clinicStart ? 1 : 0);
-    const isClinicColor = p.id === '__clinic__';
-    const reorder = isFixed ? '<div class="drag-placeholder"></div>' : (
-      mobile
-        ? `<div class="move-btns">
-             <button class="move-btn" onclick="moveVisit(${tidx},-1)" ${tidx===0?'disabled':''}>▲</button>
-             <button class="move-btn" onclick="moveVisit(${tidx},1)" ${tidx===todayList.length-1?'disabled':''}>▼</button>
-           </div>`
-        : `<div class="drag-handle" title="ドラッグで並び替え">⠿</div>`
-    );
+    // 今日だけUI
+    let overrideUI;
+    if (editing) {
+      const draft = overrideDraft.get(id) || [{ type: 'ok', start: '09:00', end: '17:00' }];
+      const rowsHTML = draft.map((w, ri) => {
+        const [sh, sm] = w.start.split(':');
+        const [eh, em] = w.end.split(':');
+        return `
+          <div class="today-ov-row">
+            <select class="today-ov-type ${w.type}" id="ov-type-${id}-${ri}"
+              onchange="this.className='today-ov-type '+this.value">
+              <option value="ok"${w.type==='ok'?' selected':''}>OK</option>
+              <option value="ng"${w.type==='ng'?' selected':''}>NG</option>
+            </select>
+            <select class="override-sel" id="ov-sh-${id}-${ri}">${makeHourOpts(sh)}</select><span style="font-size:11px">:</span><select class="override-sel" id="ov-sm-${id}-${ri}">${makeMinOpts(sm)}</select>
+            <span style="font-size:11px;color:#94a3b8">〜</span>
+            <select class="override-sel" id="ov-eh-${id}-${ri}">${makeHourOpts(eh)}</select><span style="font-size:11px">:</span><select class="override-sel" id="ov-em-${id}-${ri}">${makeMinOpts(em)}</select>
+            ${draft.length > 1 ? `<button class="override-cancel" onclick="removeTodayOvRow('${id}',${ri})" title="削除">✕</button>` : ''}
+          </div>`;
+      }).join('');
+      overrideUI = `
+        <div class="override-editor">
+          ${rowsHTML}
+          <div class="override-editor-btns">
+            <button class="override-add" onclick="addTodayOvRow('${id}')">＋ 追加</button>
+            <button class="override-ok" onclick="confirmOverrideEdit('${id}')">✓ 確定</button>
+            <button class="override-cancel" onclick="cancelOverrideEdit('${id}')">キャンセル</button>
+          </div>
+        </div>`;
+    } else if (ovNorm?.windows?.length) {
+      const badgeItems = ovNorm.windows.map(w => {
+        const color = w.type === 'ng' ? '#c53030' : '#1a6b40';
+        return `<span style="color:${color}">${w.type.toUpperCase()}: ${w.start}〜${w.end}</span>`;
+      }).join('<span style="color:#b45309;margin:0 2px">／</span>');
+      overrideUI = `
+        <div class="override-badge" onclick="startOverrideEdit('${id}')" title="クリックで編集">
+          🕐 ${badgeItems}
+          <button class="override-badge-clear" onclick="event.stopPropagation();clearTodayOverride('${id}')" title="解除">✕</button>
+        </div>`;
+    } else {
+      overrideUI = `<button class="override-btn" onclick="startOverrideEdit('${id}')">🕐 今日だけ設定</button>`;
+    }
+
     return `
-    <div class="visit-item${(!isFixed && !mobile) ? ' draggable' : ''}"
-         ${(!isFixed && !mobile) ? `draggable="true" data-tidx="${tidx}"` : ''}>
-      ${reorder}
-      <div class="visit-num ${isClinicColor ? 'clinic' : ''}">${i + 1}</div>
-      <div class="visit-info">
-        <div class="visit-name">${esc(p.name)}</div>
-        <div class="visit-addr">${esc(p.address)}</div>
+    <div class="visit-item">
+      <div class="visit-item-top" onclick="openEditor(todayList[${i}].patient)">
+        <div class="visit-num">${i + 1}</div>
+        <div class="visit-info" style="flex:1;min-width:0">
+          <div class="visit-name">${esc(t.patient.name)} <span style="font-size:11px;color:#64748b;font-weight:400">${esc(t.patient.doctor || '')}</span></div>
+          <div class="visit-cond">${condHTML}</div>
+        </div>
+        <span style="font-size:16px;color:#94a3b8;flex-shrink:0">›</span>
       </div>
-      ${isFixed ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
+      <div class="visit-item-bottom">
+        <input class="dur-input" type="number" min="5" max="180" step="5" value="${t.duration}"
+          onchange="updateDuration(${i}, this.value)" style="width:70px">
+        <div class="dur-label">分</div>
+        ${overrideUI}
+        <button class="del-btn" onclick="removePatient(${i})" style="margin-left:auto">✕</button>
+      </div>
     </div>`;
   }).join('');
-
-  setupDragReorder();
 }
 
-let dragSrcIdx = null;
+/* ── 時刻ユーティリティ ── */
+function timeToMin(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+function minToTime(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+function roundUp15(min) {
+  return Math.ceil(min / 15) * 15;
+}
 
-function setupDragReorder() {
-  const items = document.querySelectorAll('.visit-item.draggable');
-  items.forEach(item => {
-    item.addEventListener('dragstart', e => {
-      dragSrcIdx = parseInt(item.dataset.tidx);
-      e.dataTransfer.effectAllowed = 'move';
-      setTimeout(() => item.classList.add('dragging'), 0);
-    });
-    item.addEventListener('dragend', () => {
-      item.classList.remove('dragging');
-      document.querySelectorAll('.visit-item').forEach(el => el.classList.remove('drag-over'));
-    });
-    item.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      document.querySelectorAll('.visit-item').forEach(el => el.classList.remove('drag-over'));
-      item.classList.add('drag-over');
-    });
-    item.addEventListener('drop', e => {
-      e.preventDefault();
-      const destIdx = parseInt(item.dataset.tidx);
-      if (isNaN(dragSrcIdx) || isNaN(destIdx) || dragSrcIdx === destIdx) return;
-      const [moved] = todayList.splice(dragSrcIdx, 1);
-      todayList.splice(destIdx, 0, moved);
-      renderTodayList();
-    });
+/* 患者の指定日における利用可能時間帯（OK windows） */
+function patientFeasibleWindows(patient, dayName, todayOverride) {
+  // 今日だけの制約が入っていたら通常制約を全て無視してそれだけを使う
+  const ovNorm = _ovNormalize(todayOverride);
+  if (ovNorm?.windows?.length) {
+    // フルウィンドウから始めて OK/NG を適用
+    let ovWindows = [[0, 24 * 60]];
+    const okEntries = ovNorm.windows.filter(w => w.type === 'ok');
+    const ngEntries = ovNorm.windows.filter(w => w.type === 'ng');
+    // NG を引く
+    for (const ng of ngEntries) {
+      ovWindows = subtractWindow(ovWindows, timeToMin(ng.start), timeToMin(ng.end));
+    }
+    // OK がある場合は積集合（OR: どれか1つに収まればよい）
+    if (okEntries.length) {
+      let intersection = [];
+      for (const ok of okEntries) {
+        const os = timeToMin(ok.start), oe = timeToMin(ok.end);
+        for (const [ws, we] of ovWindows) {
+          const is = Math.max(ws, os), ie = Math.min(we, oe);
+          if (is < ie) intersection.push([is, ie]);
+        }
+      }
+      ovWindows = intersection;
+    }
+    ovWindows.sort((a, b) => a[0] - b[0]);
+    return ovWindows;
+  }
+  // 旧フォーマット互換
+  if (todayOverride?.from && todayOverride?.to) {
+    return [[timeToMin(todayOverride.from), timeToMin(todayOverride.to)]];
+  }
+
+  const mp = patient.memo_parsed || {};
+  // 全日 NG
+  if (mp.ng_days && mp.ng_days.includes(dayName)) return [];
+
+  // 出発 9:00 〜 18:30 をフルウィンドウとする
+  let windows = [[9 * 60, 18 * 60 + 30]];
+
+  // NG windows を引く
+  const ngs = (mp.ng_windows || []).filter(w => w.day === dayName || w.day === '全');
+  for (const ng of ngs) {
+    const s = timeToMin(ng.start);
+    const e = timeToMin(ng.end);
+    windows = subtractWindow(windows, s, e);
+  }
+
+  // OK windows がある場合は積集合
+  const oks = (mp.ok_windows || []).filter(w => w.day === dayName || w.day === '全');
+  if (oks.length) {
+    let intersection = [];
+    for (const ok of oks) {
+      const os = timeToMin(ok.start);
+      const oe = timeToMin(ok.end);
+      for (const [ws, we] of windows) {
+        const is = Math.max(ws, os);
+        const ie = Math.min(we, oe);
+        if (is < ie) intersection.push([is, ie]);
+      }
+    }
+    windows = intersection;
+  }
+
+  // 時刻順にソート（登録順によらず早い枠から試せるようにする）
+  windows.sort((a, b) => a[0] - b[0]);
+
+  // fixed_time があればその点だけ
+  if (mp.fixed_time) {
+    const ft = timeToMin(mp.fixed_time);
+    return [[ft, ft + 1]];  // ピンポイント
+  }
+
+  return windows;
+}
+
+function subtractWindow(windows, s, e) {
+  const out = [];
+  for (const [ws, we] of windows) {
+    if (e <= ws || s >= we) { out.push([ws, we]); continue; }
+    if (s > ws) out.push([ws, s]);
+    if (e < we) out.push([e, we]);
+  }
+  return out;
+}
+
+/* ── Google Maps JS SDK のロード待ち（最適化ボタン押下時に初めて読み込む） ── */
+function waitForGMaps(timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    if (window._gMapsLoaded) { resolve(); return; }
+    // まだ script タグがなければ注入
+    if (!document.getElementById('gmaps-script')) {
+      const s = document.createElement('script');
+      s.id = 'gmaps-script';
+      s.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyCOwmnhLf7L6l-T6M606v635iXDMTcdqv8&callback=_gMapsCallback&loading=async';
+      s.async = true;
+      document.head.appendChild(s);
+    }
+    const start = Date.now();
+    const check = () => {
+      if (window._gMapsLoaded) { resolve(); return; }
+      if (Date.now() - start > timeout) { reject(new Error('Google Maps の読込がタイムアウトしました')); return; }
+      setTimeout(check, 150);
+    };
+    check();
   });
 }
 
-/* ── 全行程 Google Maps ── */
-function openFullRoute() {
-  const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
-  if (fullList.length < 2) return;
-  const origin      = encodeURIComponent(fullList[0].address);
-  const destination = encodeURIComponent(fullList[fullList.length - 1].address);
-  const waypoints   = fullList.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-  if (waypoints) url += `&waypoints=${waypoints}`;
-  window.open(url, '_blank');
+/* ── Distance Cache（地点間距離の永続キャッシュ） ── */
+async function loadDistanceCache(pairs) {
+  // pairs: [{origin, destination}] → Map<"origin\x00dest", minutes>
+  if (!pairs.length) return new Map();
+  const origins = [...new Set(pairs.map(p => p.origin))];
+  const dests   = [...new Set(pairs.map(p => p.destination))];
+  try {
+    const { data, error } = await db
+      .from('distance_cache')
+      .select('origin, destination, minutes')
+      .in('origin', origins)
+      .in('destination', dests);
+    if (error) throw error;
+    const pairSet = new Set(pairs.map(p => p.origin + '\x00' + p.destination));
+    const map = new Map();
+    for (const row of (data || [])) {
+      const key = row.origin + '\x00' + row.destination;
+      if (pairSet.has(key)) map.set(key, row.minutes);
+    }
+    return map;
+  } catch (e) {
+    console.warn('distance_cache load failed:', e);
+    return new Map();
+  }
 }
 
-/* ── QR コード ── */
-function showQR() {
-  const url = 'https://kmrshtp-alt.github.io/houmon-navi/';
-  const qr  = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(url)}`;
-  document.getElementById('modal-box').innerHTML = `
-    <div class="modal-title" style="text-align:center;margin-bottom:6px">アプリのQRコード</div>
-    <div class="modal-sub" style="text-align:center;margin-bottom:16px">スマホやタブレットのカメラで読み取ってください</div>
-    <div style="text-align:center;margin-bottom:16px">
-      <img src="${qr}" style="width:220px;height:220px;border-radius:8px;border:1px solid #e2e8f0">
-    </div>
-    <div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:20px;word-break:break-all">${url}</div>
-    <div class="modal-actions" style="justify-content:center">
-      <button class="modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">閉じる</button>
+async function saveDistanceCache(entries) {
+  // entries: [{origin, destination, minutes}]
+  if (!entries.length) return;
+  try {
+    const { error } = await db
+      .from('distance_cache')
+      .upsert(entries, { onConflict: 'origin,destination' });
+    if (error) throw error;
+  } catch (e) {
+    console.warn('distance_cache save failed:', e);
+  }
+}
+
+/* ── Google Maps API 使用量管理（Supabase 永続化） ── */
+const MAPS_FREE_LIMIT = 40000; // $200クレジット ÷ $5/1000要素 = 40,000要素/月
+let mapsUsedCache = 0; // in-memory キャッシュ（同期読み取り用）
+
+function mapsUsageKey() {
+  const d = new Date();
+  return `maps_usage_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function getMapsUsed() {
+  return mapsUsedCache;
+}
+async function loadMapsUsage() {
+  // Supabase から今月の使用量を読み込む
+  try {
+    const key = mapsUsageKey();
+    const { data, error } = await db.from('app_settings').select('value').eq('key', key).maybeSingle();
+    if (!error && data?.value != null) {
+      mapsUsedCache = parseInt(data.value) || 0;
+    } else {
+      // Supabase に記録なし → localStorage の値があれば移行
+      const local = parseInt(localStorage.getItem(key) || '0');
+      if (local > 0) {
+        mapsUsedCache = local;
+        await saveMapsUsageToSupabase(local); // 移行
+      } else {
+        mapsUsedCache = 0;
+      }
+    }
+  } catch(e) {
+    // Supabase 失敗時は localStorage フォールバック
+    mapsUsedCache = parseInt(localStorage.getItem(mapsUsageKey()) || '0');
+  }
+  updateMapsUsageDisplay();
+}
+async function saveMapsUsageToSupabase(n) {
+  try {
+    await db.from('app_settings').upsert(
+      { key: mapsUsageKey(), value: n, updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    );
+  } catch(e) { console.warn('Maps使用量保存失敗:', e.message); }
+}
+async function addMapsUsed(n) {
+  mapsUsedCache += n;
+  localStorage.setItem(mapsUsageKey(), String(mapsUsedCache)); // バックアップ
+  await saveMapsUsageToSupabase(mapsUsedCache);
+}
+function getMapsRemaining() {
+  return Math.max(0, MAPS_FREE_LIMIT - getMapsUsed());
+}
+/* ── 距離行列取得（JS SDK の DistanceMatrixService を使用） ── */
+async function fetchDistanceMatrix(locations) {
+  // locations: [{address, lat?, lng?}, ...]  クリニックが index 0
+  try {
+    await waitForGMaps();
+  } catch (e) {
+    console.warn('Google Maps SDK 未ロード → フォールバック使用', e.message);
+    return fallbackDistanceMatrix(locations);
+  }
+
+  const addresses = locations.map(l => l.address);
+  const n = addresses.length;
+
+  // ── 1. キャッシュ読み込み ──
+  const allPairs = [];
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++)
+      if (i !== j) allPairs.push({ origin: addresses[i], destination: addresses[j] });
+
+  const cached = await loadDistanceCache(allPairs);
+
+  // ── 2. 行列をキャッシュで初期化 ──
+  const matrix = Array.from({ length: n }, () => Array(n).fill(0));
+  for (const { origin, destination } of allPairs) {
+    const key = origin + '\x00' + destination;
+    if (cached.has(key)) {
+      matrix[addresses.indexOf(origin)][addresses.indexOf(destination)] = cached.get(key);
+    }
+  }
+
+  // ── 3. 全キャッシュヒットならAPIコールなし ──
+  const uncachedPairs = allPairs.filter(p => !cached.has(p.origin + '\x00' + p.destination));
+  if (uncachedPairs.length === 0) {
+    console.log('🎯 Distance Matrix: 全キャッシュヒット（APIコールなし）');
+    return matrix;
+  }
+
+  // ── 4. 未キャッシュをoriginごとにグループ化し最小APIコールを計算 ──
+  const originToUncachedDests = new Map();
+  for (const { origin, destination } of uncachedPairs) {
+    if (!originToUncachedDests.has(origin)) originToUncachedDests.set(origin, []);
+    originToUncachedDests.get(origin).push(destination);
+  }
+  // 同じ未キャッシュdestセットのoriginsをまとめて1回のAPIコールに
+  const groups = new Map();
+  for (const [origin, dests] of originToUncachedDests) {
+    const key = JSON.stringify([...dests].sort());
+    if (!groups.has(key)) groups.set(key, { origins: [], dests });
+    groups.get(key).origins.push(origin);
+  }
+
+  // ── 5. 課金要素数チェック ──
+  let totalElements = 0;
+  for (const { origins, dests } of groups.values()) totalElements += origins.length * dests.length;
+
+  if (getMapsUsed() + totalElements > MAPS_FREE_LIMIT) {
+    const used = getMapsUsed();
+    throw new Error(
+      `Google Maps の無料枠上限に達したため実行できません。\n` +
+      `今月使用済み: ${used.toLocaleString()} 要素 / 残り: ${getMapsRemaining().toLocaleString()} 要素\n` +
+      `（今回必要: ${totalElements} 要素）`
+    );
+  }
+
+  const cacheHits = allPairs.length - uncachedPairs.length;
+  console.log(`📡 Distance Matrix: キャッシュ ${cacheHits}/${allPairs.length}件ヒット → API ${totalElements}要素（${groups.size}リクエスト）`);
+
+  // ── 6. グループごとにAPIコール ──
+  const service = new google.maps.DistanceMatrixService();
+  const avoidTolls = document.getElementById('avoid-tolls')?.checked ?? true;
+  const newEntries = [];
+
+  try {
+    for (const { origins: apiOrigins, dests: apiDests } of groups.values()) {
+      const response = await new Promise((resolve, reject) => {
+        service.getDistanceMatrix({
+          origins: apiOrigins,
+          destinations: apiDests,
+          travelMode: google.maps.TravelMode.DRIVING,
+          unitSystem: google.maps.UnitSystem.METRIC,
+          language: 'ja',
+          avoidTolls,
+        }, (resp, status) => {
+          status === google.maps.DistanceMatrixStatus.OK
+            ? resolve(resp) : reject(new Error('DistanceMatrixService error: ' + status));
+        });
+      });
+
+      for (let oi = 0; oi < apiOrigins.length; oi++) {
+        const origAddr = apiOrigins[oi];
+        const i = addresses.indexOf(origAddr);
+        for (let di = 0; di < apiDests.length; di++) {
+          const destAddr = apiDests[di];
+          const j = addresses.indexOf(destAddr);
+          const el = response.rows[oi].elements[di];
+          const mins = (el.status === 'OK' && el.duration)
+            ? Math.ceil(el.duration.value / 60) : 15;
+          if (i !== -1 && j !== -1) matrix[i][j] = mins;
+          newEntries.push({ origin: origAddr, destination: destAddr, minutes: mins });
+        }
+      }
+    }
+
+    // ── 7. キャッシュ保存・使用量更新 ──
+    await saveDistanceCache(newEntries);
+    await addMapsUsed(totalElements);
+    updateMapsUsageDisplay();
+    return matrix;
+
+  } catch (e) {
+    console.error('DistanceMatrixService 例外:', e);
+    return fallbackDistanceMatrix(locations);
+  }
+}
+
+function fallbackDistanceMatrix(locations) {
+  // 直線距離（km）× 2 を分換算（市街地での補正）
+  const n = locations.length;
+  const matrix = [];
+  for (let i = 0; i < n; i++) {
+    matrix[i] = [];
+    for (let j = 0; j < n; j++) {
+      if (i === j) { matrix[i][j] = 0; continue; }
+      const a = locations[i], b = locations[j];
+      if (a.lat && a.lng && b.lat && b.lng) {
+        const km = haversine(a.lat, a.lng, b.lat, b.lng);
+        matrix[i][j] = Math.max(5, Math.ceil(km * 2.5));  // 1km あたり 2.5 分
+      } else {
+        matrix[i][j] = 15;  // 不明時のデフォルト
+      }
+    }
+  }
+  return matrix;
+}
+
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/* 住所文字列から（lat, lng）を取得：scheduler_patients には保存していないので
+   ここではアドレス文字列のみ Distance Matrix API に渡す方式とする */
+
+/* ── 最適化アルゴリズム（時間枠付き貪欲法 + 順序の探索） ── */
+async function optimize() {
+  if (todayList.length === 0) {
+    alert('患者が選択されていません');
+    return;
+  }
+
+  const btn = document.getElementById('optimize-btn');
+  btn.disabled = true;
+  btn.textContent = '計算中…';
+
+  // 前回の結果を即時クリア（再計算中であることを明示）
+  const resultCard = document.getElementById('result-card');
+  resultCard.style.display = 'none';
+  resultCard.classList.remove('result-fadein');
+
+  try {
+    const dateStr = document.getElementById('visit-date').value;
+    const dayName = getDayName(dateStr);
+    const firstMin = timeToMin(document.getElementById('first-min').value);
+    const firstTarget = timeToMin(document.getElementById('first-target').value);
+    const returnTarget = timeToMin(document.getElementById('return-target').value);
+    const lunchEnabled = document.getElementById('lunch-toggle').checked;
+    const lunchDuration = parseInt(document.getElementById('lunch-duration').value) || 60;
+    const returnClinic = true;  // 必ずここはるへ戻る
+
+    // 距離行列取得（CLINIC を index 0、残りを 1..N）
+    const locations = [CLINIC, ...todayList.map(t => t.patient)];
+    const matrix = await fetchDistanceMatrix(locations);
+    distanceCache = matrix;
+
+    // 各患者の利用可能時間帯
+    const overrides = loadOverrides();
+    const feasWins = todayList.map(t =>
+      patientFeasibleWindows(t.patient, dayName, overrides[t.patient.external_id])
+    );
+
+    // 各患者に「fixed」「優先」スコア（今日だけ制約がある場合は fixed 扱いを解除）
+    const annotations = todayList.map((t, i) => {
+      const mp = t.patient.memo_parsed || {};
+      const ov = overrides[t.patient.external_id];
+      const isFixed = ov ? false : !!mp.fixed_time;  // 今日だけ制約があれば fixed 無効
+      const fixedTime = (!ov && mp.fixed_time) ? timeToMin(mp.fixed_time) : null;
+      return { isFixed, fixedTime, prefDays: mp.preferred_days || [], prefTime: mp.preferred_time };
+    });
+
+    // 訪問順序を決める：固定時刻患者を先に確保、その他を貪欲+局所探索
+    const result = solveSchedule(matrix, todayList, feasWins, annotations, {
+      firstMin, firstTarget, returnTarget,
+      lunchEnabled, lunchDuration, returnClinic
+    });
+
+    renderResult(result, locations, dateStr, dayName, overrides);
+    lastResult = result;
+    scheduleAutoSave();
+  } catch (e) {
+    console.error(e);
+    alert('最適化に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🪄 最適順に並び替え';
+  }
+}
+
+/* ── スケジューラ本体 ── */
+function solveSchedule(matrix, items, feasWins, annotations, cfg) {
+  const N = items.length;
+
+  if (N <= 7) {
+    // 全順列を試す（N! ≦ 5040）→ 最適解が保証される
+    const allOrders = permutations([...Array(N).keys()]);
+    const candidates = allOrders.map(ord =>
+      simulateSchedule(ord, matrix, items, feasWins, annotations, cfg));
+    candidates.sort(scheduleCmp);
+    return candidates[0];
+  }
+
+  // N > 7: 制約優先挿入法（人間の発想に近いアルゴリズム）
+  //   「固定時刻の患者 → 時間帯が狭い患者 → 自由な患者」の順に、
+  //    既存スケジュールの中で最もスコアが良い位置に1人ずつ挿入していく
+  const candidates = [];
+
+  // メイン：制約優先挿入
+  const mainOrder = constraintFirstInsert(matrix, items, feasWins, annotations, cfg, false);
+  candidates.push(simulateSchedule(mainOrder, matrix, items, feasWins, annotations, cfg));
+
+  // スワップ局所改善（全ペアのスワップを繰り返して深化）
+  candidates.push(swapImprove(mainOrder, matrix, items, feasWins, annotations, cfg));
+
+  // フリー患者をランダムに並べた多様性バリアント（制約固定患者の位置は変えない）
+  for (let i = 0; i < 15; i++) {
+    const rndOrder = constraintFirstInsert(matrix, items, feasWins, annotations, cfg, true);
+    candidates.push(simulateSchedule(rndOrder, matrix, items, feasWins, annotations, cfg));
+  }
+
+  // フォールバック：クリニックからの距離貪欲
+  const distOrder = sortIndicesByDistance(matrix, N);
+  candidates.push(simulateSchedule(distOrder, matrix, items, feasWins, annotations, cfg));
+
+  candidates.sort(scheduleCmp);
+  return candidates[0];
+}
+
+/* 制約優先挿入
+ * ① 固定時刻患者（時刻順）→ ② 時間帯が狭い患者（午前縛り等、早い枠から）
+ * → ③ 自由な患者（shuffleFree=true でランダム）
+ * 各患者を既存スケジュールの全挿入位置から最良を選んで追加 */
+function constraintFirstInsert(matrix, items, feasWins, annotations, cfg, shuffleFree) {
+  const N = items.length;
+  const fixedList = [];
+  const constrainedList = [];
+  const freeList = [];
+
+  for (let i = 0; i < N; i++) {
+    const ann = annotations[i];
+    const totalFeasible = feasWins[i].reduce((s, [ws, we]) => s + we - ws, 0);
+    if (ann.isFixed) {
+      fixedList.push(i);
+    } else if (totalFeasible < 4 * 60) {
+      // 利用可能時間帯が 4 時間未満 → 制約が厳しいグループ
+      constrainedList.push(i);
+    } else {
+      freeList.push(i);
+    }
+  }
+
+  // 固定：固定時刻の早い順（アンカーとして最初に確保）
+  fixedList.sort((a, b) => annotations[a].fixedTime - annotations[b].fixedTime);
+
+  // 制約あり：最早ウィンドウ開始が早い順（午前縛りの人を先に枠取り）
+  constrainedList.sort((a, b) => {
+    const aStart = feasWins[a].length ? feasWins[a][0][0] : 18 * 60;
+    const bStart = feasWins[b].length ? feasWins[b][0][0] : 18 * 60;
+    return aStart - bStart;
+  });
+
+  // フリー：多様性のためにシャッフル可
+  if (shuffleFree) shuffleArr(freeList);
+
+  // 挿入順: 固定 → 制約あり → フリー
+  const insertOrder = [...fixedList, ...constrainedList, ...freeList];
+
+  // 1人ずつ最良位置に挿入
+  let order = [];
+  for (const idx of insertOrder) {
+    order = insertBestPos(idx, order, matrix, items, feasWins, annotations, cfg);
+  }
+  return order;
+}
+
+/* idx を currentOrder の全挿入位置から最スコア位置に挿入して返す */
+function insertBestPos(newIdx, currentOrder, matrix, items, feasWins, annotations, cfg) {
+  if (currentOrder.length === 0) return [newIdx];
+  let bestScore = Infinity;
+  let bestOrder = null;
+  for (let pos = 0; pos <= currentOrder.length; pos++) {
+    const testOrder = [
+      ...currentOrder.slice(0, pos),
+      newIdx,
+      ...currentOrder.slice(pos)
+    ];
+    const result = simulateSchedule(testOrder, matrix, items, feasWins, annotations, cfg);
+    const score = schedScore(result);
+    if (score < bestScore) { bestScore = score; bestOrder = testOrder; }
+  }
+  return bestOrder;
+}
+
+/* スワップ局所改善：全ペアのスワップで改善がある限り繰り返す */
+function swapImprove(initOrder, matrix, items, feasWins, annotations, cfg) {
+  let best = simulateSchedule(initOrder, matrix, items, feasWins, annotations, cfg);
+  let improved = true;
+  while (improved) {
+    improved = false;
+    const ord = best.order;
+    for (let i = 0; i < ord.length - 1; i++) {
+      for (let j = i + 1; j < ord.length; j++) {
+        const newOrd = [...ord];
+        [newOrd[i], newOrd[j]] = [newOrd[j], newOrd[i]];
+        const cand = simulateSchedule(newOrd, matrix, items, feasWins, annotations, cfg);
+        if (schedScore(cand) < schedScore(best)) { best = cand; improved = true; }
+      }
+    }
+  }
+  return best;
+}
+
+/* スコア計算（小さいほど良い）
+ *  ① 制約違反 >> ② 帰着遅れ >> ③ 出発遅れ >> ④ 走行時間 */
+function schedScore(r) {
+  return r.infeasibleCount * 100000
+       + r.lateMin        * 1000
+       + r.startDelay     * 10
+       + r.totalTravel;
+}
+
+/* 候補ソート用比較関数 */
+function scheduleCmp(a, b) {
+  if (a.infeasibleCount !== b.infeasibleCount) return a.infeasibleCount - b.infeasibleCount;
+  if (a.lateMin !== b.lateMin) return a.lateMin - b.lateMin;
+  const devA = a.startDelay * 2 + a.startEarly * 0.5;
+  const devB = b.startDelay * 2 + b.startEarly * 0.5;
+  if (Math.abs(devA - devB) > 5) return devA - devB;
+  if (a.cfg.lunchEnabled) {
+    if (a.lunchTaken !== b.lunchTaken) return a.lunchTaken ? -1 : 1;
+  }
+  return a.totalTravel - b.totalTravel;
+}
+
+function sortIndicesByDistance(matrix, N) {
+  const idx = [...Array(N).keys()];
+  idx.sort((a, b) => matrix[0][a + 1] - matrix[0][b + 1]);
+  return idx;
+}
+
+function permutations(arr) {
+  if (arr.length <= 1) return [arr];
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    for (const p of permutations(rest)) {
+      out.push([arr[i], ...p]);
+    }
+  }
+  return out;
+}
+
+function shuffleArr(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/* ── シミュレーション本体（昼休憩を lunchAt 番目の患者の直前に挿入、-1 なら挿入しない） ── */
+function runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg) {
+  const N = order.length;
+  const visits = [];
+  let currentTime = 9 * 60;  // ハード下限 9:00（cfg.firstMin は「出発目安」としてペナルティに使用）
+  let infeasibleCount = 0;
+  let lateMin = 0;
+  let lunchTaken = false;
+  let lunchStart = null;
+  let totalTravel = 0;
+  let prevMatIdx = 0;
+
+  for (let step = 0; step < N; step++) {
+    // 昼休憩の挿入（step === lunchAt かつ最初の患者ではない）
+    if (lunchAt > 0 && step === lunchAt) {
+      const travelToClinic = matrix[prevMatIdx][0];
+      const clinicArrival = currentTime + travelToClinic;
+      const lunchEnd = clinicArrival + cfg.lunchDuration;
+      visits.push({ type: 'lunch', start: clinicArrival, end: lunchEnd });
+      lunchTaken = true;
+      lunchStart = clinicArrival;
+      totalTravel += travelToClinic;
+      currentTime = lunchEnd;
+      prevMatIdx = 0;  // クリニックに戻った
+    }
+
+    const pIdx = order[step];
+    const matIdx = pIdx + 1;
+    const travelUsed = matrix[prevMatIdx][matIdx];
+    let earliest = currentTime + travelUsed;
+    if (step === 0) earliest = Math.max(earliest, cfg.firstMin);
+    earliest = roundUp15(earliest);
+
+    const windows = feasWins[pIdx];
+    const ann = annotations[pIdx];
+    let arrival = -1;
+
+    if (ann.isFixed) {
+      arrival = ann.fixedTime;
+      if (ann.fixedTime < earliest) infeasibleCount++;
+    } else {
+      for (const [ws, we] of windows) {
+        const slot = Math.max(earliest, roundUp15(ws));
+        if (slot < we) { arrival = slot; break; }
+      }
+      if (arrival < 0) { infeasibleCount++; arrival = earliest; }
+    }
+
+    const dur = items[pIdx].duration;
+    const departure = arrival + dur;
+    totalTravel += travelUsed;
+
+    visits.push({
+      type: 'patient', idx: pIdx,
+      patient: items[pIdx].patient,
+      duration: dur, arrival, departure, travel: travelUsed,
+      warning: !ann.isFixed && !inAnyWindow(arrival, windows) ? '時間制約外'
+             : (ann.isFixed && ann.fixedTime < earliest ? '固定時刻に到達不能' : null)
+    });
+
+    currentTime = departure;
+    prevMatIdx = matIdx;
+  }
+
+  const returnTravel = cfg.returnClinic ? matrix[prevMatIdx][0] : 0;
+  const returnTime = currentTime + returnTravel;
+  if (returnTime > cfg.returnTarget) lateMin = returnTime - cfg.returnTarget;
+  totalTravel += returnTravel;
+
+  const firstPatient = visits.find(v => v.type === 'patient');
+  const firstArrival = firstPatient ? firstPatient.arrival : cfg.firstMin;
+  const firstDepart = firstPatient ? firstArrival - firstPatient.travel : cfg.firstMin;
+  const startDelay = Math.max(0, firstArrival - cfg.firstTarget);   // 10:00着より遅れた分
+  // 出発が cfg.firstMin（9:30目安）より早い場合も startEarly に加算（患者が多ければ優先度低い）
+  const startEarly = Math.max(0, cfg.firstTarget - firstArrival)
+                   + Math.max(0, cfg.firstMin - firstDepart) * 0.5;
+
+  return {
+    order, visits, returnTime, infeasibleCount, lateMin,
+    totalTravel, firstArrival, startDelay, startEarly,
+    cfg, returnTravel, lunchTaken, lunchStart
+  };
+}
+
+/* 昼休憩の時刻品質スコア（小さいほど良い / Infinity = 受け入れ不可）
+   受け入れ可能帯: 11:00〜14:00 クリニック着
+   理想帯: 11:30〜13:00 クリニック着（中心 12:15 目標）               */
+function lunchTimingScore(lunchStart, lunchDuration) {
+  if (lunchStart === null) return Infinity;
+  const ACCEPT_MIN = 11 * 60;       // 11:00 未満はNG
+  const ACCEPT_MAX = 14 * 60;       // 14:00 超はNG
+  if (lunchStart < ACCEPT_MIN || lunchStart > ACCEPT_MAX) return Infinity;
+  const mid = lunchStart + lunchDuration / 2;
+  const ideal = 12 * 60 + 15;      // 12:15 中心が理想
+  return Math.abs(mid - ideal);
+}
+
+/* 順列ごとに全挿入位置を試して最適な昼休憩位置を選ぶ */
+function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
+  if (!cfg.lunchEnabled) {
+    return runSimulation(order, -1, matrix, items, feasWins, annotations, cfg);
+  }
+
+  const N = order.length;
+  let bestResult = null;
+  let bestScore = Infinity;
+
+  // 挿入位置 1〜N を全て試す（0 = 最初の患者の前 = 診療前に休憩 → 除外）
+  for (let lunchAt = 1; lunchAt <= N; lunchAt++) {
+    const res = runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg);
+    const tScore = lunchTimingScore(res.lunchStart, cfg.lunchDuration);
+    if (tScore === Infinity) continue;  // 11〜14時の範囲外 → スキップ
+
+    // 複合スコア：制約違反 >> 帰着遅れ >> 総移動時間 >> 昼のタイミング（軽微）
+    const score = res.infeasibleCount * 100000 + res.lateMin * 1000 + res.totalTravel + tScore * 0.1;
+    if (score < bestScore) { bestScore = score; bestResult = res; }
+  }
+
+  // 11〜14時に挿入できる位置が見つからなければ昼休憩なしで返す
+  if (!bestResult) {
+    const noLunch = runSimulation(order, -1, matrix, items, feasWins, annotations, cfg);
+    noLunch.lunchTaken = false;
+    return noLunch;
+  }
+  return bestResult;
+}
+
+function inAnyWindow(t, windows) {
+  return windows.some(([s, e]) => t >= s && t < e);
+}
+
+/* ══════════════════════════════════════════════════════
+   患者制約エディタ
+══════════════════════════════════════════════════════ */
+let editorPatient = null;
+
+const WEEK_DAYS = ['月','火','水','木','金','土','日'];
+
+function openEditor(patient) {
+  editorPatient = patient;
+  const mp = patient.memo_parsed || {};
+
+  document.getElementById('ed-name').textContent = patient.name;
+  document.getElementById('ed-sub').textContent =
+    `ID: ${patient.external_id}　担当: ${patient.doctor || '未設定'}　${patient.address || ''}`;
+
+  /* ── 原文ブロック ── */
+  const memoRaw = patient.memo_raw ?? null;
+  const ctMemo  = patient.ct_memo  ?? null;
+
+  /* ── 曜日チェックボックス ── */
+  function dayChecksHTML(field, selected) {
+    return `<div class="day-checks">${WEEK_DAYS.map(d =>
+      `<label class="day-chk">
+        <input type="checkbox" data-field="${field}" value="${d}" ${(selected||[]).includes(d)?'checked':''}>
+        ${d}
+      </label>`).join('')}</div>`;
+  }
+
+  /* ── 時間帯リスト ── */
+  function winRowHTML(type, w) {
+    const dayOpts = [...WEEK_DAYS,'全'].map(d =>
+      `<option${w.day===d?' selected':''}>${d}</option>`).join('');
+    return `<div class="window-row">
+      <select class="wr-day">${dayOpts}</select>
+      <input class="wr-time" type="time" value="${w.start||'09:00'}">
+      <span style="font-size:11px;color:#94a3b8">〜</span>
+      <input class="wr-time" type="time" value="${w.end||'17:00'}">
+      <input class="wr-reason" type="text" placeholder="理由" value="${esc(w.reason||'')}">
+      <button class="win-del" onclick="this.closest('.window-row').remove()">✕</button>
     </div>`;
-  document.getElementById('modal-overlay').style.display = 'flex';
+  }
+  function winsHTML(type, wins) {
+    return (wins||[]).map(w => winRowHTML(type, w)).join('');
+  }
+
+  document.getElementById('ed-body').innerHTML = `
+    <!-- 原文 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">原文</div>
+      <div class="raw-grid">
+        <div>
+          <div class="raw-label">CZ列（スケジュール備考）</div>
+          <div class="raw-text${memoRaw?'':' empty'}">${memoRaw ? esc(memoRaw) : '未登録'}</div>
+        </div>
+        <div>
+          <div class="raw-label">CT列（訪問頻度・その他）</div>
+          <div class="raw-text${ctMemo?'':' empty'}">${ctMemo ? esc(ctMemo) : '未登録'}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 基本設定 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">スケジュール制約</div>
+
+      <div class="edit-row">
+        <div class="edit-label">訪問可否</div>
+        <select class="edit-select" id="ef-available">
+          <option value="free"    ${mp.available==='free'   ?'selected':''}>終日可（制約なし）</option>
+          <option value="limited" ${mp.available==='limited'?'selected':''}>条件あり</option>
+          <option value="fixed"   ${mp.available==='fixed'  ?'selected':''}>固定（月1回等）</option>
+        </select>
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">不可曜日</div>
+        ${dayChecksHTML('ng_days', mp.ng_days)}
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">希望曜日</div>
+        ${dayChecksHTML('pref_days', mp.preferred_days)}
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">時間帯希望</div>
+        <select class="edit-select" id="ef-pref-time">
+          <option value="any"       ${mp.preferred_time==='any'      ?'selected':''}>指定なし</option>
+          <option value="morning"   ${mp.preferred_time==='morning'  ?'selected':''}>午前希望</option>
+          <option value="afternoon" ${mp.preferred_time==='afternoon'?'selected':''}>午後希望</option>
+          <option value="before11"  ${mp.preferred_time==='before11' ?'selected':''}>11時までに終了</option>
+          <option value="after14"   ${mp.preferred_time==='after14'  ?'selected':''}>14時以降</option>
+        </select>
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">固定時刻</div>
+        <input class="edit-input-text" type="time" id="ef-fixed-time" value="${mp.fixed_time||''}">
+        <span style="font-size:11px;color:#94a3b8">（毎回この時刻）</span>
+      </div>
+
+      <div class="edit-row">
+        <div class="edit-label">訪問パターン</div>
+        <input class="edit-input-text" type="text" id="ef-week-pattern"
+          value="${esc(mp.week_pattern||'')}" placeholder="例: 第3金、隔週木" style="width:180px">
+      </div>
+    </div>
+
+    <!-- NG時間帯 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">NG時間帯</div>
+      <div class="windows-list" id="ng-list">${winsHTML('ng', mp.ng_windows)}</div>
+      <button class="win-add-btn" onclick="addWinRow('ng-list')">＋ NG時間帯を追加</button>
+    </div>
+
+    <!-- OK時間帯 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">OK時間帯（この時間のみ可、の場合）</div>
+      <div class="windows-list" id="ok-list">${winsHTML('ok', mp.ok_windows)}</div>
+      <button class="win-add-btn" onclick="addWinRow('ok-list')">＋ OK時間帯を追加</button>
+    </div>
+
+    <!-- メモ -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">メモ・備考</div>
+      <textarea class="notes-ta" id="ef-notes">${esc(mp.notes||'')}</textarea>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="ef-needs-review" ${mp.needs_review?'checked':''}
+          style="accent-color:#c53030;width:16px;height:16px">
+        <span style="color:#c53030;font-weight:700">⚠️ 要確認フラグ</span>
+      </label>
+    </div>
+  `;
+
+  // ── 矛盾チェック ──
+  const conflicts = detectWindowConflicts(mp);
+  if (conflicts.length) {
+    const msgs = conflicts.map(c => `<li>${c}</li>`).join('');
+    const banner = `<div style="background:#fff0f0;border-left:4px solid #c53030;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;color:#c53030">
+      <div style="font-weight:700;margin-bottom:4px">⚠️ 時間設定に矛盾があります</div>
+      <ul style="margin:0;padding-left:18px;line-height:1.8">${msgs}</ul>
+    </div>`;
+    document.getElementById('ed-body').innerHTML = banner + document.getElementById('ed-body').innerHTML;
+  }
+
+  document.getElementById('editor-overlay').style.display = 'flex';
 }
 
-/* ── 起動 ── */
-setupAutocomplete('from');
-setupAutocomplete('to');
-setupTodayAutocomplete();
-setupCSV();
+/* OK枠とNG枠の矛盾を検出して説明文リストを返す */
+function detectWindowConflicts(mp) {
+  const toMin = s => { const [h,m]=(s||'00:00').split(':').map(Number); return h*60+m; };
+  const ok = mp.ok_windows || [];
+  const ng = mp.ng_windows || [];
+  const msgs = [];
+
+  for (const okw of ok) {
+    const os = toMin(okw.start);
+    const oe = toMin(okw.end === '23:59' ? '23:59' : (okw.end || '23:59'));
+    const killers = ng.filter(ngw => {
+      // 曜日が合致するか
+      const dayMatch = ngw.day === okw.day || ngw.day === '全' || okw.day === '全';
+      if (!dayMatch) return false;
+      // OK枠がNG枠に完全に含まれるか
+      return toMin(ngw.start) <= os && toMin(ngw.end) >= oe;
+    });
+    if (killers.length) {
+      const dayLabel = okw.day === '全' ? '全日' : `${okw.day}曜`;
+      const ngDesc = killers.map(n => `${n.day === '全' ? '全日' : n.day+'曜'}${n.start}〜${n.end}${n.reason ? `（${n.reason}）` : ''}`).join('、');
+      msgs.push(`${dayLabel}${okw.start}〜${okw.end} のOK枠が、NG枠「${ngDesc}」に完全に含まれています`);
+    }
+  }
+
+  // OK枠があるのに実質0分になる曜日も検出
+  const days = ['月','火','水','木','金','土','日','全'];
+  for (const d of days) {
+    const okForDay = ok.filter(w => w.day === d || w.day === '全');
+    if (!okForDay.length) continue;
+    // その曜日の実効ウィンドウを計算
+    const wins = detectWindowConflicts._calcWins ? detectWindowConflicts._calcWins(d, ok, ng) : null;
+    // 簡易チェック：全OK枠がNGで消えているか
+    const allKilled = okForDay.every(okw => {
+      const os = toMin(okw.start), oe = toMin(okw.end === '23:59' ? '23:59' : (okw.end||'23:59'));
+      return ng.some(ngw => {
+        const dm = ngw.day === d || ngw.day === '全' || d === '全';
+        return dm && toMin(ngw.start) <= os && toMin(ngw.end) >= oe;
+      });
+    });
+    if (allKilled && !msgs.some(m => m.includes(`${d === '全' ? '全日' : d+'曜'}`))) {
+      const dLabel = d === '全' ? '全日' : `${d}曜`;
+      msgs.push(`${dLabel}はOK枠が全てNG枠と重なっており、訪問可能な時間帯がありません`);
+    }
+  }
+
+  return [...new Set(msgs)]; // 重複除去
+}
+
+function closeEditor() {
+  document.getElementById('editor-overlay').style.display = 'none';
+  editorPatient = null;
+}
+
+function editorBgClick(e) {
+  if (e.target === document.getElementById('editor-overlay')) closeEditor();
+}
+
+function addWinRow(listId) {
+  const list = document.getElementById(listId);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = `<div class="window-row">
+    <select class="wr-day">${[...WEEK_DAYS,'全'].map(d=>`<option>${d}</option>`).join('')}</select>
+    <input class="wr-time" type="time" value="09:00">
+    <span style="font-size:11px;color:#94a3b8">〜</span>
+    <input class="wr-time" type="time" value="10:00">
+    <input class="wr-reason" type="text" placeholder="理由">
+    <button class="win-del" onclick="this.closest('.window-row').remove()">✕</button>
+  </div>`;
+  list.appendChild(tmp.firstChild);
+}
+
+function collectChecks(field) {
+  return Array.from(document.querySelectorAll(`input[data-field="${field}"]:checked`))
+    .map(cb => cb.value);
+}
+
+function collectWins(listId) {
+  return Array.from(document.querySelectorAll(`#${listId} .window-row`)).map(row => {
+    const [dayEl] = row.querySelectorAll('.wr-day');
+    const times = row.querySelectorAll('.wr-time');
+    const reasonEl = row.querySelector('.wr-reason');
+    const obj = { day: dayEl.value, start: times[0].value, end: times[1].value };
+    const r = reasonEl.value.trim();
+    if (r) obj.reason = r;
+    return obj;
+  }).filter(w => w.start && w.end);
+}
+
+async function saveEditor() {
+  if (!editorPatient) return;
+  const btn = document.getElementById('ed-save-btn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    const fixedTime = document.getElementById('ef-fixed-time').value || null;
+    const newParsed = {
+      available:      document.getElementById('ef-available').value,
+      ng_days:        collectChecks('ng_days'),
+      preferred_days: collectChecks('pref_days'),
+      preferred_time: document.getElementById('ef-pref-time').value,
+      fixed_time:     fixedTime,
+      week_pattern:   document.getElementById('ef-week-pattern').value.trim() || null,
+      ng_windows:     collectWins('ng-list').sort((a,b) => a.start.localeCompare(b.start)),
+      ok_windows:     collectWins('ok-list').sort((a,b) => a.start.localeCompare(b.start)),
+      notes:          document.getElementById('ef-notes').value.trim(),
+      needs_review:   document.getElementById('ef-needs-review').checked || undefined
+    };
+    if (!newParsed.needs_review) delete newParsed.needs_review;
+
+    const { error } = await db.from('scheduler_patients')
+      .update({ memo_parsed: newParsed })
+      .eq('external_id', editorPatient.external_id);
+    if (error) throw error;
+
+    // ローカルキャッシュを更新
+    const idx = patients.findIndex(p => p.external_id === editorPatient.external_id);
+    if (idx >= 0) patients[idx].memo_parsed = newParsed;
+    editorPatient.memo_parsed = newParsed;
+    renderTodayList();
+    closeEditor();
+
+    // 結果カードが表示中なら「再計算してください」バナーを出す
+    const rc = document.getElementById('result-card');
+    if (rc.style.display !== 'none') {
+      const existing = document.getElementById('recalc-banner');
+      if (!existing) {
+        const banner = document.createElement('div');
+        banner.id = 'recalc-banner';
+        banner.style.cssText = 'background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 16px;font-size:13px;color:#92400e;display:flex;align-items:center;gap:10px';
+        banner.innerHTML = '⚠️ 制約を変更しました。結果が古い可能性があります。&nbsp;<button onclick="document.getElementById(\'recalc-banner\').remove();optimize()" style="background:#f59e0b;color:white;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">再計算する</button><button onclick="document.getElementById(\'recalc-banner\').remove()" style="background:none;border:none;color:#92400e;cursor:pointer;font-size:16px;margin-left:auto">✕</button>';
+        rc.insertAdjacentElement('afterbegin', banner);
+      }
+    }
+
+    showToast('✅ 保存しました');
+  } catch (e) {
+    alert('保存に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '保存';
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast-msg');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
+
+/* ── 制約違反の詳細メッセージを生成 ── */
+function violationDetails(patient, arrival, dayName, hasWarning) {
+  const mp = patient.memo_parsed || {};
+  const msgs = [];
+
+  // ── ハード制約（時間帯NG / 固定時刻） ──
+  if (hasWarning) {
+    if (mp.fixed_time) {
+      msgs.push({ level: 'ng', text: `固定時刻 ${mp.fixed_time} に到達不能（実際の到着: ${minToTime(arrival)}）` });
+    } else {
+      // NG枠に入っているか
+      const ngViolated = (mp.ng_windows || []).filter(w =>
+        (w.day === dayName || w.day === '全') &&
+        arrival >= timeToMin(w.start) && arrival < timeToMin(w.end)
+      );
+      for (const ng of ngViolated) {
+        msgs.push({ level: 'ng', text: `NG時間帯（${ng.start}〜${ng.end}）に訪問になっています` });
+      }
+      // OK枠があるのに外れているか
+      const oks = (mp.ok_windows || []).filter(w => w.day === dayName || w.day === '全');
+      if (oks.length > 0) {
+        const inOk = oks.some(ok => arrival >= timeToMin(ok.start) && arrival < timeToMin(ok.end));
+        if (!inOk) {
+          const okStr = oks.map(o => `${o.start}〜${o.end}`).join('、');
+          msgs.push({ level: 'ng', text: `指定可能時間（${okStr}）外の訪問になっています` });
+        }
+      }
+      // ウィンドウが空（その日全てNG）
+      if (!ngViolated.length && !oks.length) {
+        msgs.push({ level: 'ng', text: '時間制約を満たせる枠がありませんでした' });
+      }
+    }
+  }
+
+  // ── ソフト制約（希望時間帯） ──
+  if (mp.preferred_time === 'morning' && arrival >= 12 * 60) {
+    msgs.push({ level: 'warn', text: `午前希望ですが ${minToTime(arrival)} の訪問になっています` });
+  } else if (mp.preferred_time === 'afternoon' && arrival < 12 * 60) {
+    msgs.push({ level: 'warn', text: `午後希望ですが ${minToTime(arrival)} の訪問になっています` });
+  } else if (mp.preferred_time === 'before11' && arrival >= 11 * 60) {
+    msgs.push({ level: 'warn', text: `11時までの希望ですが ${minToTime(arrival)} の訪問になっています` });
+  } else if (mp.preferred_time === 'after14' && arrival < 14 * 60) {
+    msgs.push({ level: 'warn', text: `14時以降の希望ですが ${minToTime(arrival)} の訪問になっています` });
+  }
+
+  // ── ソフト制約（希望曜日） ──
+  if (mp.preferred_days && mp.preferred_days.length > 0 && !mp.preferred_days.includes(dayName)) {
+    msgs.push({ level: 'warn', text: `${mp.preferred_days.join('・')}曜希望ですが ${dayName}曜の訪問になっています` });
+  }
+
+  return msgs;
+}
+
+/* ── 結果描画 ── */
+function renderResult(result, locations, dateStr, dayName, overrides = {}) {
+  const card = document.getElementById('result-card');
+  const body = document.getElementById('result-body');
+
+  // ヘッダーに曜日・日付を表示
+  const dateLabel = (() => {
+    if (!dateStr) return '最適化結果';
+    const d = new Date(dateStr);
+    const m = d.getMonth() + 1, day = d.getDate();
+    const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+    return `最適化結果 — ${m}月${day}日（${dow}）`;
+  })();
+  card.querySelector('.card-header').textContent = dateLabel;
+
+  const rows = [];
+  const cfg = result.cfg;
+
+  // クリニック発（最初の患者の travel から逆算）
+  const firstVisit = result.visits.find(v => v.type === 'patient');
+  if (firstVisit) {
+    const depart = firstVisit.arrival - firstVisit.travel;
+    rows.push(`<div class="result-row clinic">
+      <div class="r-time">${minToTime(depart)}</div>
+      <div class="r-num clinic">🏥</div>
+      <div class="r-info"><div class="r-name">ここはる発</div></div>
+    </div>`);
+  }
+
+  let pNum = 0;
+  for (const v of result.visits) {
+    if (v.type === 'lunch') {
+      rows.push(`<div class="result-row lunch">
+        <div class="r-time">${minToTime(v.start)}</div>
+        <div class="r-num lunch">🍱</div>
+        <div class="r-info"><div class="r-name">ここはるで昼休憩 (〜${minToTime(v.end)})</div></div>
+      </div>`);
+    } else if (v.type === 'patient') {
+      pNum++;
+      const ov = overrides[v.patient.external_id];
+      const ovN = _ovNormalize(ov);
+      let condText;
+      if (ovN?.windows?.length) {
+        const winLabels = ovN.windows.map(w => {
+          const color = w.type === 'ng' ? '#c53030' : '#1a6b40';
+          return `<span style="color:${color};font-weight:700">${w.type.toUpperCase()}: ${w.start}〜${w.end}</span>`;
+        }).join('<span style="color:#94a3b8;margin:0 3px">／</span>');
+        condText = `<span style="font-size:11px">🕐 今日: ${winLabels}</span><span style="color:#94a3b8;font-size:10px;margin-left:4px">（通常制約を無視）</span>`;
+      } else {
+        condText = condSummary(v.patient.memo_parsed);
+      }
+      const violations = ov ? [] : violationDetails(v.patient, v.arrival, dayName, !!v.warning);
+      const hasNG   = violations.some(m => m.level === 'ng');
+      const hasWarn = violations.some(m => m.level === 'warn');
+      const badgeIcon = hasNG ? '❌' : hasWarn ? '⚠️' : '';
+      const rowClass = hasNG ? 'result-row row-ng' : hasWarn ? 'result-row row-warn' : 'result-row';
+      const detailHtml = violations.map(m =>
+        `<div class="r-violation ${m.level === 'ng' ? 'r-viol-ng' : 'r-viol-warn'}">${m.level === 'ng' ? '❌' : '⚠️'} ${esc(m.text)}</div>`
+      ).join('');
+      rows.push(`<div class="${rowClass}">
+        <div class="r-time">${minToTime(v.arrival)}</div>
+        <div class="r-num">${pNum}</div>
+        <div class="r-info">
+          <div class="r-name">${esc(v.patient.name)}${badgeIcon ? ` <span class="r-warn">${badgeIcon}</span>` : ''}</div>
+          <div class="r-meta">${condText}</div>
+          <div class="r-stats">
+            <span class="r-stat travel">🚗 ${v.travel}分</span>
+            <span class="r-stat consult">📋 ${v.duration}分</span>
+          </div>
+          ${detailHtml}
+          <button class="r-cancel-btn" onclick="cancelPatientFromResult('${esc(v.patient.external_id)}')">✕ キャンセル</button>
+        </div>
+      </div>`);
+    }
+  }
+
+  if (cfg.returnClinic && result.returnTravel > 0) {
+    rows.push(`<div class="result-row clinic">
+      <div class="r-time">${minToTime(result.returnTime)}</div>
+      <div class="r-num clinic">🏥</div>
+      <div class="r-info"><div class="r-name">ここはる着</div></div>
+    </div>`);
+  }
+
+  // サマリ
+  const totalTravel = result.totalTravel || 0;
+  const totalConsult = result.visits.filter(v => v.type === 'patient').reduce((s, v) => s + v.duration, 0);
+
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const summary = `<div class="summary-row">
+    <div>📍 訪問 ${pNum}人</div>
+    <div>🚗 走行 ${totalTravel}分</div>
+    <div>🩺 診察 ${totalConsult}分</div>
+    <div>⏱ 総時間 ${minToTime(result.returnTime - (firstVisit.arrival - firstVisit.travel))}</div>
+    <div style="margin-left:auto;font-weight:500;color:#64748b;font-size:11px">🕐 ${ts} 計算</div>
+  </div>`;
+
+  // 警告（各行の詳細は行内に表示済み。サマリはカウントのみ）
+  let warnings = '';
+  const ngCount  = result.visits.filter(v => v.type === 'patient' && violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'ng')).length;
+  const warnCount = result.visits.filter(v => v.type === 'patient' && !violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'ng') && violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'warn')).length;
+  if (ngCount > 0) {
+    warnings += `<div class="warning-box" style="border-color:#c53030;background:#fff5f5;color:#c53030">❌ ${ngCount}人の時間制約（NG枠・固定時刻）が満たせていません。各行の詳細を確認してください。</div>`;
+  }
+  if (warnCount > 0) {
+    warnings += `<div class="warning-box">⚠️ ${warnCount}人の希望（時間帯・曜日）が完全には反映できていません。</div>`;
+  }
+  if (result.lateMin > 0) {
+    warnings += `<div class="warning-box">⚠️ 帰着が ${result.lateMin} 分遅れる予定です（${minToTime(result.returnTime)}）。</div>`;
+  }
+  if (cfg.lunchEnabled && !result.lunchTaken) {
+    warnings += `<div class="warning-box">⚠️ 11〜14時の間にここはるへ戻れるタイミングがないため、昼休憩を自動挿入できませんでした。スケジュールを確認のうえ手動で調整してください。</div>`;
+  }
+
+  body.innerHTML = rows.join('') + summary + warnings;
+
+  // Google Maps URL
+  const orderedPatients = result.visits.filter(v => v.type === 'patient').map(v => v.patient);
+  const fullList = [CLINIC, ...orderedPatients];
+  if (cfg.returnClinic) fullList.push(CLINIC);
+  if (fullList.length >= 2) {
+    const origin = encodeURIComponent(fullList[0].address);
+    const destination = encodeURIComponent(fullList[fullList.length - 1].address);
+    const waypoints = fullList.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    if (waypoints) url += `&waypoints=${waypoints}`;
+    document.getElementById('gmap-btn').href = url;
+  }
+
+  card.style.display = 'block';
+  // フェードインアニメーション（クラス付け直しで再トリガー）
+  void card.offsetWidth; // reflow
+  card.classList.add('result-fadein');
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── 時刻セレクト用ヘルパー ── */
+function makeHourOpts(sel) {
+  return Array.from({length:14},(_,i)=>i+8)
+    .map(h=>`<option value="${String(h).padStart(2,'0')}" ${String(h).padStart(2,'0')===sel?'selected':''}>${String(h).padStart(2,'0')}</option>`)
+    .join('');
+}
+function makeMinOpts(sel) {
+  return Array.from({length:12},(_,i)=>i*5)
+    .map(m=>`<option value="${String(m).padStart(2,'0')}" ${String(m).padStart(2,'0')===sel?'selected':''}>${String(m).padStart(2,'0')}</option>`)
+    .join('');
+}
+
+/* ── 担当医変更 ── */
+function onDoctorChange() {
+  currentDoctor = document.getElementById('doctor-select').value;
+  loadRouteFromSupabase();
+}
+
+/* ── 担当医ドロップダウンを患者データから構築 ── */
+function buildDoctorSelect() {
+  const sel = document.getElementById('doctor-select');
+  const names = [...new Set(patients.map(p => p.doctor).filter(Boolean))].sort();
+  names.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+}
+
+/* ── Supabaseにルートを保存 ── */
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(saveRouteToSupabase, 800);
+}
+
+async function saveRouteToSupabase() {
+  if (!currentDoctor) return;
+  const visitDate = document.getElementById('visit-date').value;
+  if (!visitDate) return;
+  const overrides = loadOverrides();
+  const visitListJson = todayList.map(t => ({
+    external_id: t.patient.external_id,
+    duration: t.duration,
+    override: overrides[t.patient.external_id] || null
+  }));
+  try {
+    const { error } = await db.from('daily_routes').upsert({
+      doctor: currentDoctor,
+      visit_date: visitDate,
+      visit_list_json: visitListJson,
+      result_json: lastResult || null,
+      distance_matrix_json: distanceCache || null,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'doctor,visit_date' });
+    if (!error) {
+      const now = new Date();
+      const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      const el = document.getElementById('save-status');
+      if (el) el.textContent = `💾 ${ts}保存`;
+    }
+  } catch(e) {
+    // テーブル未作成の場合など、エラーは無視
+    console.warn('保存失敗:', e.message);
+  }
+}
+
+/* ── Supabaseからルートを読み込み ── */
+async function loadRouteFromSupabase() {
+  if (!currentDoctor) return;
+  const visitDate = document.getElementById('visit-date').value;
+  if (!visitDate) return;
+  try {
+    const { data, error } = await db.from('daily_routes')
+      .select('*')
+      .eq('doctor', currentDoctor)
+      .eq('visit_date', visitDate)
+      .maybeSingle();
+    if (error || !data) return;
+    // 患者リストを復元
+    todayList.length = 0;
+    const ovData = {};
+    for (const item of (data.visit_list_json || [])) {
+      const p = patients.find(x => x.external_id === item.external_id);
+      if (p) {
+        todayList.push({ patient: p, duration: item.duration });
+        if (item.override) ovData[item.external_id] = item.override;
+      }
+    }
+    // 今日だけ制約を復元（localStorageへ）
+    if (Object.keys(ovData).length) {
+      const existing = loadOverrides();
+      Object.assign(existing, ovData);
+      saveOverrides(existing);
+    }
+    // 距離行列を復元
+    if (data.distance_matrix_json) distanceCache = data.distance_matrix_json;
+    // 結果を復元
+    if (data.result_json) {
+      lastResult = data.result_json;
+      const overrides = loadOverrides();
+      const locations = [CLINIC, ...todayList.map(t => t.patient)];
+      renderResult(lastResult, locations, visitDate, getDayName(visitDate), overrides);
+      document.getElementById('result-card').style.display = '';
+    }
+    renderTodayList();
+    const el = document.getElementById('save-status');
+    if (el) {
+      const d = new Date(data.updated_at);
+      el.textContent = `💾 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}読込`;
+    }
+  } catch(e) {
+    console.warn('読込失敗:', e.message);
+  }
+}
+
+/* ── 確定結果から患者をキャンセルして再計算 ── */
+async function cancelPatientFromResult(externalId) {
+  if (!confirm(`この患者をキャンセルしますか？\n残りの患者で時刻を再計算します。`)) return;
+  if (!distanceCache) { alert('距離データがありません。再度最適化してください。'); return; }
+
+  // todayListから削除
+  const idx = todayList.findIndex(t => t.patient.external_id === externalId);
+  if (idx === -1) return;
+  todayList.splice(idx, 1);
+  renderTodayList();
+
+  if (todayList.length === 0) {
+    document.getElementById('result-card').style.display = 'none';
+    scheduleAutoSave();
+    return;
+  }
+
+  // 確定済み順序を保持して時刻を再計算
+  const dateStr = document.getElementById('visit-date').value;
+  const dayName = getDayName(dateStr);
+
+  // 既存resultのvisitsから残り患者の順序を取得
+  const confirmedOrder = (lastResult?.visits || [])
+    .filter(v => v.type === 'patient' && v.patient.external_id !== externalId)
+    .map(v => v.patient.external_id);
+
+  // todayListをconfirmedOrderに並べ直す
+  const reordered = confirmedOrder
+    .map(id => todayList.find(t => t.patient.external_id === id))
+    .filter(Boolean);
+  // confirmedOrderにない患者（念のため）を末尾に追加
+  const inOrder = new Set(confirmedOrder);
+  todayList.filter(t => !inOrder.has(t.patient.external_id)).forEach(t => reordered.push(t));
+  todayList.length = 0;
+  reordered.forEach(t => todayList.push(t));
+
+  const btn = document.getElementById('optimize-btn');
+  btn.disabled = true;
+  btn.textContent = '再計算中…';
+
+  try {
+    const locations = [CLINIC, ...todayList.map(t => t.patient)];
+    const matrix = await fetchDistanceMatrix(locations);
+    distanceCache = matrix;
+
+    const overrides = loadOverrides();
+    const feasWins = todayList.map(t => patientFeasibleWindows(t.patient, dayName, overrides[t.patient.external_id]));
+    const annotations = todayList.map(t => {
+      const mp = t.patient.memo_parsed||{};
+      const ov = overrides[t.patient.external_id];
+      return {isFixed:ov?false:!!mp.fixed_time, fixedTime:(!ov&&mp.fixed_time)?timeToMin(mp.fixed_time):null, prefDays:mp.preferred_days||[], prefTime:mp.preferred_time};
+    });
+    const cfg = {
+      firstMin: timeToMin(document.getElementById('first-min').value),
+      firstTarget: timeToMin(document.getElementById('first-target').value),
+      returnTarget: timeToMin(document.getElementById('return-target').value),
+      lunchEnabled: document.getElementById('lunch-toggle').checked,
+      lunchDuration: parseInt(document.getElementById('lunch-duration').value)||60,
+      returnClinic: true
+    };
+
+    // 順番固定で再シミュレート（最適化なし）
+    const order = [...Array(todayList.length).keys()];
+    const result = simulateSchedule(order, matrix, todayList, feasWins, annotations, cfg);
+    lastResult = result;
+    renderResult(result, locations, dateStr, dayName, overrides);
+    scheduleAutoSave();
+  } catch(e) {
+    alert('再計算に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🪄 最適順に並び替え';
+  }
+}
+
+/* ── Google Cloud Monitoring API 連携（Distance Matrix 実使用量取得） ── */
+const GCP_PROJECT = 'houmon-navi-scheduler';
+const GCP_CLIENT_ID = '978633506719-neerlkj1dhk4u2ea9d2iuomdba8948gb.apps.googleusercontent.com';
+const GCP_CLIENT_SECRET = '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';
+const GCP_REDIRECT_URI = 'https://kmrshtp-alt.github.io/houmon-navi/';
+const GCP_SCOPE = 'https://www.googleapis.com/auth/monitoring.read';
+const GCP_TOKEN_KEY = 'gcp_oauth_token';
+
+/* PKCE ユーティリティ */
+function gcpGenerateCodeVerifier() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let v = '';
+  const arr = new Uint8Array(128);
+  crypto.getRandomValues(arr);
+  arr.forEach(b => { v += chars[b % chars.length]; });
+  return v;
+}
+
+async function gcpCodeVerifierToChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/* OAuth 認可 URL への遷移（ポップアップ方式 → ページ遷移なし）
+   verifier を state に含めることでポップアップ自身がトークン交換を完結できる
+   → オリジンを問わず（file:// 親でも）動作する */
+async function gcpStartOAuth() {
+  const verifier = gcpGenerateCodeVerifier();
+  const challenge = await gcpCodeVerifierToChallenge(verifier);
+  // state に verifier を埋め込む（ポップアップが自力でコード交換するため）
+  const state = 'gcp_monitoring_oauth:' + verifier;
+  const params = new URLSearchParams({
+    client_id: GCP_CLIENT_ID,
+    redirect_uri: GCP_REDIRECT_URI,
+    response_type: 'code',
+    scope: GCP_SCOPE,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    access_type: 'offline',
+    prompt: 'consent',
+    state,
+  });
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+
+  const popup = window.open(authUrl, 'gcp_oauth_popup', 'width=520,height=640,scrollbars=yes,resizable=yes');
+  if (!popup) {
+    window.location.href = authUrl; // ポップアップブロック時はフォールバック
+    return;
+  }
+
+  // ポップアップが閉じたら表示を更新（オリジン問わず動作）
+  const pollClosed = setInterval(async () => {
+    if (!popup.closed) return;
+    clearInterval(pollClosed);
+    clearTimeout(timeout);
+    bcChannel.close();
+    // ポップアップがトークンを Supabase に保存済みのはずなので再初期化
+    await gcpInitDisplay();
+  }, 600);
+
+  // BroadcastChannel で同一オリジン時に即時通知を受け取る（最適化）
+  const bcChannel = new BroadcastChannel('gcp_oauth_channel');
+  bcChannel.onmessage = async (e) => {
+    if (e.data?.type !== 'gcp_oauth_done') return;
+    clearInterval(pollClosed);
+    clearTimeout(timeout);
+    bcChannel.close();
+    popup?.close();
+    await gcpInitDisplay();
+  };
+
+  const timeout = setTimeout(() => {
+    clearInterval(pollClosed);
+    bcChannel.close();
+  }, 300000);
+}
+
+/* 認可コード → トークン交換（verifier を直接渡す） */
+async function gcpExchangeCode(code, verifier) {
+  if (!verifier) throw new Error('PKCE verifier が見つかりません');
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: GCP_CLIENT_ID,
+      client_secret: GCP_CLIENT_SECRET,
+      redirect_uri: GCP_REDIRECT_URI,
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: verifier,
+    }).toString(),
+  });
+  if (!resp.ok) throw new Error('トークン交換失敗: ' + (await resp.text()));
+  return await resp.json();
+}
+
+/* トークン保存 */
+async function gcpSaveToken(tokenObj) {
+  tokenObj.expires_at = Date.now() + (tokenObj.expires_in || 3600) * 1000;
+  await db.from('app_settings').upsert(
+    { key: GCP_TOKEN_KEY, value: JSON.stringify(tokenObj), updated_at: new Date().toISOString() },
+    { onConflict: 'key' }
+  );
+}
+
+/* トークン読み込み */
+async function gcpLoadToken() {
+  try {
+    const { data } = await db.from('app_settings').select('value').eq('key', GCP_TOKEN_KEY).maybeSingle();
+    if (data?.value) return JSON.parse(data.value);
+  } catch(e) { /* ignore */ }
+  return null;
+}
+
+/* トークンリフレッシュ */
+async function gcpRefreshToken(refreshToken) {
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: GCP_CLIENT_ID,
+      client_secret: GCP_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }).toString(),
+  });
+  if (!resp.ok) throw new Error('トークンリフレッシュ失敗: ' + (await resp.text()));
+  return await resp.json();
+}
+
+/* 有効なアクセストークンを取得（期限切れなら自動更新） */
+async function gcpGetAccessToken() {
+  let token = await gcpLoadToken();
+  if (!token) return null;
+  if (token.expires_at && Date.now() > token.expires_at - 60000) {
+    // 有効期限切れ（1分前） → リフレッシュ
+    if (!token.refresh_token) return null;
+    try {
+      const refreshed = await gcpRefreshToken(token.refresh_token);
+      refreshed.refresh_token = refreshed.refresh_token || token.refresh_token;
+      await gcpSaveToken(refreshed);
+      token = refreshed;
+    } catch(e) {
+      console.warn('トークンリフレッシュ失敗:', e.message);
+      return null;
+    }
+  }
+  return token.access_token || null;
+}
+
+/* Monitoring API で今月の Distance Matrix リクエスト数を取得 */
+async function gcpFetchMonthlyUsage() {
+  const accessToken = await gcpGetAccessToken();
+  if (!accessToken) return null;
+
+  const now = new Date();
+  const startTime = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+
+  const params = new URLSearchParams({
+    'filter': 'metric.type="serviceruntime.googleapis.com/api/request_count" AND resource.labels.service="distance-matrix-backend.googleapis.com"',
+    'interval.startTime': startTime,
+    'interval.endTime': endTime,
+    'aggregation.alignmentPeriod': '2678400s',
+    'aggregation.perSeriesAligner': 'ALIGN_SUM',
+    'aggregation.crossSeriesReducer': 'REDUCE_SUM',
+    'aggregation.groupByFields': 'resource.labels.service',
+  });
+
+  const resp = await fetch(
+    `https://monitoring.googleapis.com/v3/projects/${GCP_PROJECT}/timeSeries?${params.toString()}`,
+    { headers: { 'Authorization': 'Bearer ' + accessToken } }
+  );
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Monitoring API エラー ${resp.status}: ${errText}`);
+  }
+  const json = await resp.json();
+  const point = json?.timeSeries?.[0]?.points?.[0]?.value;
+  if (!point) return 0;
+  return parseInt(point.int64Value || point.doubleValue || '0') || 0;
+}
+
+/* Supabase に実測キャッシュを保存（全ユーザーが参照できる） */
+function gcpCacheKey() {
+  const d = new Date();
+  return `maps_actual_cache_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+async function gcpSaveCache(count) {
+  await db.from('app_settings').upsert(
+    { key: gcpCacheKey(), value: JSON.stringify({ count, fetchedAt: Date.now() }), updated_at: new Date().toISOString() },
+    { onConflict: 'key' }
+  );
+}
+async function gcpLoadCache() {
+  try {
+    const { data } = await db.from('app_settings').select('value').eq('key', gcpCacheKey()).maybeSingle();
+    if (data?.value) return JSON.parse(data.value); // { count, fetchedAt }
+  } catch(e) {}
+  return null;
+}
+
+/* UI 表示を更新 */
+function updateMapsUsageDisplay() {
+  const el = document.getElementById('maps-usage');
+  if (!el) return;
+
+  const state = el.dataset.gcpState || 'unknown'; // 'live' | 'cached' | 'no_token' | 'unknown'
+  const gcpReqCount = el.dataset.gcpCount != null ? parseInt(el.dataset.gcpCount) : null; // API呼び出し回数
+  const cacheAge = el.dataset.gcpCacheAge ? parseInt(el.dataset.gcpCacheAge) : null; // 分
+
+  // 自己追跡の要素数（課金単位）を使ってパーセント計算
+  const selfElements = getMapsUsed(); // 要素数（origins×destinations）
+  const selfPct = Math.min(100, Math.round(selfElements / MAPS_FREE_LIMIT * 100));
+  const selfColor = selfPct >= 90 ? '#c53030' : selfPct >= 70 ? '#e67e22' : '#1a6b40';
+
+  let usageHtml, btnHtml, alertHtml = '';
+
+  // 80%以上でアラートバナー表示
+  if (selfPct >= 90) {
+    alertHtml = `<div style="background:#fff5f5;border-left:4px solid #c53030;padding:6px 10px;font-size:12px;color:#c53030;margin-top:4px">
+      🚨 <strong>Google Maps 無料枠 残り${100-selfPct}%</strong>（${getMapsRemaining().toLocaleString()}要素）— このままでは課金が発生します。今月は最適化の実行を控えてください。
+    </div>`;
+  } else if (selfPct >= 80) {
+    alertHtml = `<div style="background:#fffbeb;border-left:4px solid #e67e22;padding:6px 10px;font-size:12px;color:#92400e;margin-top:4px">
+      ⚠️ <strong>Google Maps 無料枠 残り${100-selfPct}%</strong>（${getMapsRemaining().toLocaleString()}要素）— 月末まで最適化回数を控えめにしてください。
+    </div>`;
+  }
+
+  if (gcpReqCount !== null) {
+    // Google Cloud Monitoring の実測値あり（APIコール回数）
+    const cacheLabel = state === 'cached' && cacheAge != null
+      ? `<span style="color:#94a3b8;font-size:10px">（${cacheAge < 60 ? cacheAge+'分前' : Math.round(cacheAge/60)+'時間前'}取得）</span>`
+      : '';
+    // 自己追跡の要素数を主表示、Cloud Monitoringのコール回数はサブ情報として表示
+    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
+      + ` <span style="color:#94a3b8;font-size:10px">APIコール ${gcpReqCount.toLocaleString()}回 ${cacheLabel}</span>`;
+    btnHtml = `<button onclick="gcpRefreshUsageDisplay()" style="font-size:10px;padding:2px 7px;background:#edf2fa;color:#1e3d6e;border:none;border-radius:4px;cursor:pointer;font-family:inherit" id="gcp-refresh-btn">🔄 更新</button>`;
+  } else if (state === 'no_token') {
+    // トークンなし → 自己追跡の要素数のみ表示
+    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
+      + ` <span style="color:#94a3b8;font-size:10px">（管理者ログインでAPI実測値を取得）</span>`;
+    btnHtml = `<button onclick="gcpStartOAuth()" style="font-size:10px;padding:2px 7px;background:#1e3d6e;color:white;border:none;border-radius:4px;cursor:pointer;font-family:inherit">🔑 管理者ログイン</button>`;
+  } else {
+    // 取得中 or 不明 → 自己追跡分は即時表示
+    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
+      + ` <span style="color:#94a3b8;font-size:10px">⏳ API実測値取得中…</span>`;
+    btnHtml = '';
+  }
+
+  el.innerHTML = `${usageHtml} ${btnHtml}`;
+
+  // アラートバナーを maps-usage の直後に挿入
+  const alertEl = document.getElementById('maps-usage-alert');
+  if (alertEl) alertEl.innerHTML = alertHtml;
+  else if (alertHtml && el.parentNode) {
+    const div = document.createElement('div');
+    div.id = 'maps-usage-alert';
+    div.innerHTML = alertHtml;
+    el.parentNode.insertBefore(div, el.nextSibling);
+  }
+}
+
+/* 起動時: キャッシュ確認 → 古ければ自動フェッチ（管理者トークンを全員で共用） */
+async function gcpInitDisplay() {
+  const el = document.getElementById('maps-usage');
+  if (!el) return;
+
+  // まず「取得中」表示
+  el.dataset.gcpState = 'unknown';
+  updateMapsUsageDisplay();
+
+  // Supabase キャッシュを確認（全ユーザー共通）
+  const cache = await gcpLoadCache();
+  const CACHE_TTL = 4 * 60 * 60 * 1000; // 4時間
+  if (cache && (Date.now() - cache.fetchedAt) < CACHE_TTL) {
+    // 新鮮なキャッシュあり → 即表示
+    const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60000);
+    el.dataset.gcpState = 'cached';
+    el.dataset.gcpCount = String(cache.count);
+    el.dataset.gcpCacheAge = String(ageMin);
+    updateMapsUsageDisplay();
+    return;
+  }
+
+  // キャッシュ古い or なし → Supabase に管理者トークンがあれば自動フェッチ
+  const token = await gcpLoadToken();
+  if (!token) {
+    // トークン自体がない → 管理者ログインを促す
+    el.dataset.gcpState = 'no_token';
+    updateMapsUsageDisplay();
+    return;
+  }
+
+  // トークンあり → フェッチ試行
+  try {
+    const count = await gcpFetchMonthlyUsage();
+    if (count !== null) {
+      await gcpSaveCache(count); // Supabase にキャッシュ保存（他ユーザーも使える）
+      el.dataset.gcpState = 'live';
+      el.dataset.gcpCount = String(count);
+      el.dataset.gcpCacheAge = '0';
+      updateMapsUsageDisplay();
+    } else {
+      el.dataset.gcpState = 'no_token';
+      updateMapsUsageDisplay();
+    }
+  } catch(e) {
+    // フェッチ失敗 → 古いキャッシュがあればそれを表示
+    if (cache) {
+      const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60000);
+      el.dataset.gcpState = 'cached';
+      el.dataset.gcpCount = String(cache.count);
+      el.dataset.gcpCacheAge = String(ageMin);
+    } else {
+      el.dataset.gcpState = 'no_token';
+    }
+    updateMapsUsageDisplay();
+  }
+}
+
+/* 「🔄 更新」ボタン処理 */
+async function gcpRefreshUsageDisplay() {
+  const btn = document.getElementById('gcp-refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 取得中…'; }
+  try {
+    const count = await gcpFetchMonthlyUsage();
+    const el = document.getElementById('maps-usage');
+    if (el) {
+      if (count === null) {
+        el.dataset.gcpState = 'no_token';
+        delete el.dataset.gcpCount;
+      } else {
+        await gcpSaveCache(count);
+        el.dataset.gcpState = 'live';
+        el.dataset.gcpCount = String(count);
+        el.dataset.gcpCacheAge = '0';
+      }
+    }
+  } catch(e) {
+    console.warn('Monitoring API 取得失敗:', e.message);
+    showToast('⚠️ Google からの取得に失敗しました: ' + e.message);
+  }
+  updateMapsUsageDisplay();
+}
+
+/* ページロード時に ?code= を処理 */
+async function gcpHandleRedirectCode() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const code = urlParams.get('code');
+  const stateParam = urlParams.get('state') || '';
+  // state が 'gcp_monitoring_oauth:VERIFIER' 形式かチェック
+  if (!code || !stateParam.startsWith('gcp_monitoring_oauth:')) return;
+
+  // verifier を state から取り出す
+  const verifier = stateParam.slice('gcp_monitoring_oauth:'.length);
+  history.replaceState({}, document.title, window.location.pathname);
+
+  // ポップアップ自身がトークン交換を完結させる（オリジン問わず確実）
+  try {
+    const tokenObj = await gcpExchangeCode(code, verifier);
+    await gcpSaveToken(tokenObj);
+    // BroadcastChannel で同一オリジンの親に完了を通知（最適化）
+    try {
+      const bc = new BroadcastChannel('gcp_oauth_channel');
+      bc.postMessage({ type: 'gcp_oauth_done' });
+      bc.close();
+    } catch(e) {}
+    // ポップアップを閉じる（親は pollClosed で検知して gcpInitDisplay を呼ぶ）
+    setTimeout(() => window.close(), 400);
+  } catch(e) {
+    console.error('OAuth コード交換失敗:', e);
+    // エラー時はポップアップに表示（閉じない）
+    document.body.innerHTML = `<div style="font-family:sans-serif;padding:40px;color:#c53030">
+      <h2>⚠️ Google 認証エラー</h2><p>${e.message}</p>
+      <button onclick="window.close()" style="margin-top:20px;padding:10px 20px;cursor:pointer">閉じる</button>
+    </div>`;
+  }
+}
+
+/* ── 初回起動 ── */
 (async () => {
+  // OAuth リダイレクトコードの処理（ログイン前でも実行）
+  await gcpHandleRedirectCode();
+
   const { data: { session } } = await db.auth.getSession();
-  if (session) load();
+  if (session) {
+    document.getElementById('login-screen').style.display = 'none';
+    init();
+  }
 })();
 </script>
+
 </body>
 </html>
