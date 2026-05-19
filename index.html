@@ -595,6 +595,101 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
   .modal-box { padding: 24px 20px; }
   .modal-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 尿検査スクリーン ── */
+#urine-screen {
+  display: none; width: 100%; overflow-y: auto; padding: 24px 20px; background: #f1f5f9;
+}
+.urine-wrap { max-width: 760px; margin: 0 auto; }
+
+.urine-timer-card {
+  background: #1e3d6e; border-radius: 20px; padding: 20px 24px;
+  color: white; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+}
+.urine-big-time {
+  font-size: 60px; font-weight: 900; font-variant-numeric: tabular-nums;
+  line-height: 1; min-width: 110px; letter-spacing: -2px;
+}
+.urine-timer-right { flex: 1; min-width: 140px; }
+.urine-next-label { font-size: 11px; color: rgba(255,255,255,0.55); margin-bottom: 3px; }
+.urine-next-items { font-size: 14px; font-weight: 700; min-height: 20px; }
+.urine-progress-bar { height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px; margin-top: 10px; }
+.urine-progress-fill { height: 6px; background: #22c55e; border-radius: 3px; transition: width 1s linear; width: 0; }
+.urine-timer-btns { display: flex; gap: 8px; align-items: center; }
+.urine-start-btn {
+  background: #22c55e; color: white; border: none; border-radius: 10px;
+  padding: 11px 22px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.urine-start-btn:disabled { background: rgba(255,255,255,0.2); cursor: default; }
+.urine-reset-btn {
+  background: rgba(255,255,255,0.15); color: white; border: 1.5px solid rgba(255,255,255,0.3);
+  border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+
+.urine-items-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+}
+.urine-item {
+  background: white; border-radius: 14px; padding: 14px 14px 12px;
+  border: 2px solid #e2e8f0; transition: all 0.25s; opacity: 0.5;
+}
+.urine-item.unlocked { opacity: 1; border-color: #3b82f6; box-shadow: 0 2px 12px rgba(59,130,246,0.2); animation: pulse-border 0.6s ease; }
+.urine-item.done { opacity: 1; border-color: #22c55e; box-shadow: none; }
+.urine-item.waiting { opacity: 1; border-color: #e2e8f0; }
+@keyframes pulse-border { 0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.4)} 50%{box-shadow:0 0 0 8px rgba(59,130,246,0)} }
+
+.urine-item-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.urine-item-name { font-size: 14px; font-weight: 800; color: #1e293b; }
+.urine-item-time { font-size: 11px; color: #94a3b8; }
+.urine-item.unlocked .urine-item-time { color: #3b82f6; font-weight: 700; }
+.urine-item.done .urine-item-time { color: #22c55e; }
+
+.urine-swatches { display: flex; gap: 3px; }
+.urine-swatch {
+  flex: 1; height: 40px; border-radius: 7px; cursor: pointer;
+  border: 2px solid transparent; display: flex; align-items: flex-end;
+  justify-content: center; padding-bottom: 3px;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.urine-swatch:hover { transform: scale(1.06); }
+.urine-swatch.selected { border-color: #1e293b !important; transform: scale(1.08); box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+.urine-swatch-lbl {
+  font-size: 7.5px; font-weight: 800; color: white;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9); text-align: center; line-height: 1.1;
+  pointer-events: none;
+}
+.urine-selected-val { font-size: 12px; color: #22c55e; font-weight: 700; margin-top: 8px; min-height: 16px; }
+
+.urine-results-card {
+  background: white; border-radius: 20px; padding: 20px 24px;
+  margin-bottom: 20px; border: 2px solid #22c55e;
+  box-shadow: 0 4px 16px rgba(34,197,94,0.12);
+}
+.urine-results-title { font-size: 17px; font-weight: 800; color: #1e293b; margin-bottom: 14px; }
+.urine-result-row {
+  display: flex; align-items: center; padding: 7px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.urine-result-row:last-child { border-bottom: none; }
+.urine-result-dot { width: 18px; height: 18px; border-radius: 4px; margin-right: 10px; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.1); }
+.urine-result-name { font-size: 13px; color: #64748b; width: 130px; flex-shrink: 0; }
+.urine-result-val { font-size: 14px; font-weight: 700; color: #1e293b; }
+.urine-copy-btn {
+  margin-top: 16px; background: #1e3d6e; color: white; border: none;
+  border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+}
+.urine-new-btn {
+  margin-top: 8px; margin-left: 8px; background: #f1f5f9; color: #1e293b; border: 1.5px solid #e2e8f0;
+  border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+}
+@media (max-width: 640px) {
+  .urine-items-grid { grid-template-columns: 1fr; }
+  .urine-big-time { font-size: 48px; min-width: 90px; }
+}
 </style>
 </head>
 <body>
@@ -622,6 +717,7 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
       <button class="tab active" onclick="showTab('route')">ルート検索</button>
       <button class="tab" onclick="showTab('today')">本日の訪問</button>
       <button class="tab" onclick="showTab('manage')">患者管理</button>
+      <button class="tab" onclick="showTab('urine')">尿検査</button>
     </div>
     <div class="status-badge">
       <span class="dot loading" id="dot"></span>
@@ -697,6 +793,26 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
 
       <button class="calc-btn" id="calc-btn" onclick="openFullRoute()" disabled>🗺️ Google Maps で全行程を開く</button>
 
+    </div>
+  </div>
+
+  <!-- 尿検査 -->
+  <div id="urine-screen">
+    <div class="urine-wrap">
+      <div id="urine-results-area"></div>
+      <div class="urine-timer-card">
+        <div class="urine-big-time" id="urine-time-display">00</div>
+        <div class="urine-timer-right">
+          <div class="urine-next-label">次の判定まで</div>
+          <div class="urine-next-items" id="urine-next-label">開始ボタンを押してください</div>
+          <div class="urine-progress-bar"><div class="urine-progress-fill" id="urine-progress"></div></div>
+        </div>
+        <div class="urine-timer-btns">
+          <button class="urine-start-btn" id="urine-start-btn" onclick="urineStart()">▶ 開始</button>
+          <button class="urine-reset-btn" onclick="urineReset()">リセット</button>
+        </div>
+      </div>
+      <div class="urine-items-grid" id="urine-items-grid"></div>
     </div>
   </div>
 
@@ -820,8 +936,9 @@ function showTab(tab) {
   document.getElementById('route-screen').style.display  = tab === 'route'  ? 'flex'  : 'none';
   document.getElementById('today-screen').style.display  = tab === 'today'  ? 'block' : 'none';
   document.getElementById('manage-screen').style.display = tab === 'manage' ? 'block' : 'none';
+  document.getElementById('urine-screen').style.display  = tab === 'urine'  ? 'block' : 'none';
   document.querySelectorAll('.tab').forEach((el, i) =>
-    el.classList.toggle('active', ['route','today','manage'][i] === tab));
+    el.classList.toggle('active', ['route','today','manage','urine'][i] === tab));
 }
 
 /* ── オートコンプリート ── */
@@ -1399,11 +1516,195 @@ function showQR() {
   document.getElementById('modal-overlay').style.display = 'flex';
 }
 
+/* ── 尿検査テープ判定 ── */
+const URINE_ITEMS = [
+  { id:'bilirubin',    name:'ビリルビン',        readAt:30,
+    values:['陰性','1+','2+','3+'],
+    colors:['#f5f0e0','#d4b87a','#b88c3a','#7a5010'] },
+  { id:'glucose',      name:'ブドウ糖',          readAt:30,
+    values:['陰性','100\n(1+)','250\n(2+)','500\n(3+)','1,000\n(4+)','2,000\n(5+)'],
+    colors:['#1a3d6e','#2a6a8a','#3a8c6a','#6a9a2a','#9a7a10','#7a3a08'] },
+  { id:'ketone',       name:'ケトン体',          readAt:40,
+    values:['陰性','5\n(±)','15\n(1+)','40\n(2+)','80\n(3+)','160\n(4+)'],
+    colors:['#f5e6d0','#e8c0d0','#d098b8','#b06898','#8a3878','#620858'] },
+  { id:'sg',           name:'比重',              readAt:45,
+    values:['1.000','1.005','1.010','1.015','1.020','1.025','1.030'],
+    colors:['#d8f0ec','#90d0c8','#48b0a8','#208890','#106878','#084858','#023838'] },
+  { id:'nitrite',      name:'亜硝酸塩',          readAt:60,
+    values:['陰性','陽性'],
+    colors:['#f0ede0','#e06060'] },
+  { id:'urobilinogen', name:'ウロビリノーゲン',  readAt:60,
+    values:['0.1\n(正常)','1','2','4','8'],
+    colors:['#f8f0b0','#f0d060','#e8a020','#d06800','#a04000'] },
+  { id:'protein',      name:'たん白質',          readAt:60,
+    values:['陰性','±','30\n(1+)','100\n(2+)','300\n(3+)','1,000\n(4+)'],
+    colors:['#c8e8a0','#90c870','#50a850','#208850','#086838','#024820'] },
+  { id:'ph',           name:'pH',                readAt:60,
+    values:['5.0','6.0','6.5','7.0','7.5','8.0','8.5'],
+    colors:['#e05820','#e88820','#e8b010','#b8c010','#78b010','#389010','#187850'] },
+  { id:'blood',        name:'潜血(A)',           readAt:60,
+    values:['陰性','±\n非溶血','±\n溶血','1+','2+','3+'],
+    colors:['#f0e8b0','#d8b060','#c87828','#b84018','#981010','#700808'] },
+  { id:'leukocyte',    name:'白血球',            readAt:120,
+    values:['陰性','±','1+','2+','3+'],
+    colors:['#f5ede0','#e8d0b0','#d0a870','#b07838','#885018'] },
+];
+
+const MILESTONES = [30, 40, 45, 60, 120];
+let urineElapsed = 0, urineInterval = null, urineRunning = false;
+let urineSelections = {};
+
+function urineBeep(freq = 880, dur = 0.18, count = 2) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < count; i++) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.22;
+      g.gain.setValueAtTime(0.4, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.start(t); o.stop(t + dur);
+    }
+  } catch(e) {}
+}
+
+function urineVibrate(pattern) {
+  try { navigator.vibrate && navigator.vibrate(pattern); } catch(e) {}
+}
+
+function urineRenderItems() {
+  const grid = document.getElementById('urine-items-grid');
+  grid.innerHTML = URINE_ITEMS.map(item => {
+    const unlocked = urineElapsed >= item.readAt;
+    const done     = unlocked && urineSelections[item.id] != null;
+    const cls      = done ? 'done' : unlocked ? 'unlocked' : '';
+    const selIdx   = urineSelections[item.id];
+
+    const swatches = item.values.map((v, i) => {
+      const sel = selIdx === i ? 'selected' : '';
+      const lbl = v.replace(/\n/g, '<br>');
+      return `<div class="urine-swatch ${sel}" style="background:${item.colors[i]}"
+        onclick="urineSelect('${item.id}',${i})" title="${v.replace(/\n/g,' ')}">
+        <span class="urine-swatch-lbl">${lbl}</span></div>`;
+    }).join('');
+
+    const selVal = selIdx != null
+      ? `✓ ${item.values[selIdx].replace(/\n/g,' ')}`
+      : (unlocked ? '← 色を選択' : '');
+
+    return `<div class="urine-item ${cls}" id="urine-item-${item.id}">
+      <div class="urine-item-header">
+        <span class="urine-item-name">${item.name}</span>
+        <span class="urine-item-time">${item.readAt}秒</span>
+      </div>
+      <div class="urine-swatches">${unlocked ? swatches : ''}</div>
+      <div class="urine-selected-val">${selVal}</div>
+    </div>`;
+  }).join('');
+}
+
+function urineUpdateTimer() {
+  const disp = document.getElementById('urine-time-display');
+  const prog = document.getElementById('urine-progress');
+  const next = document.getElementById('urine-next-label');
+
+  disp.textContent = String(urineElapsed).padStart(2, '0');
+  prog.style.width = (urineElapsed / 120 * 100) + '%';
+
+  const upcoming = MILESTONES.filter(m => m > urineElapsed);
+  if (upcoming.length) {
+    const nxt = upcoming[0];
+    const names = URINE_ITEMS.filter(it => it.readAt === nxt).map(it => it.name).join('・');
+    next.textContent = `${nxt - urineElapsed}秒後 → ${names}`;
+  } else {
+    next.textContent = '全項目の判定が完了しました';
+  }
+}
+
+function urineCheckMilestone(elapsed) {
+  if (!MILESTONES.includes(elapsed)) return;
+  const items = URINE_ITEMS.filter(it => it.readAt === elapsed);
+  if (!items.length) return;
+  urineBeep(elapsed === 120 ? 1046 : 880, 0.2, elapsed === 120 ? 3 : 2);
+  urineVibrate(elapsed === 120 ? [100,80,100,80,200] : [100,80,150]);
+}
+
+function urineStart() {
+  if (urineRunning) return;
+  urineRunning = true;
+  document.getElementById('urine-start-btn').disabled = true;
+  urineInterval = setInterval(() => {
+    urineElapsed++;
+    urineCheckMilestone(urineElapsed);
+    urineUpdateTimer();
+    urineRenderItems();
+    if (urineElapsed >= 120) {
+      clearInterval(urineInterval);
+      urineRunning = false;
+      urineShowResults();
+    }
+  }, 1000);
+}
+
+function urineReset() {
+  clearInterval(urineInterval);
+  urineRunning = false; urineElapsed = 0; urineSelections = {};
+  document.getElementById('urine-start-btn').disabled = false;
+  document.getElementById('urine-time-display').textContent = '00';
+  document.getElementById('urine-progress').style.width = '0';
+  document.getElementById('urine-next-label').textContent = '開始ボタンを押してください';
+  document.getElementById('urine-results-area').innerHTML = '';
+  urineRenderItems();
+}
+
+function urineSelect(id, idx) {
+  const item = URINE_ITEMS.find(it => it.id === id);
+  if (!item || urineElapsed < item.readAt) return;
+  urineSelections[id] = idx;
+  urineRenderItems();
+  if (!urineRunning && urineElapsed >= 120) urineShowResults();
+}
+
+function urineShowResults() {
+  const area = document.getElementById('urine-results-area');
+  const rows = URINE_ITEMS.map(item => {
+    const idx = urineSelections[item.id];
+    const val = idx != null ? item.values[idx].replace(/\n/g,' ') : '—';
+    const color = idx != null ? item.colors[idx] : '#e2e8f0';
+    return `<div class="urine-result-row">
+      <div class="urine-result-dot" style="background:${color}"></div>
+      <div class="urine-result-name">${item.name}</div>
+      <div class="urine-result-val">${val}</div>
+    </div>`;
+  }).join('');
+
+  const text = URINE_ITEMS.map(item => {
+    const idx = urineSelections[item.id];
+    return `${item.name}: ${idx != null ? item.values[idx].replace(/\n/g,'') : '未選択'}`;
+  }).join('\n');
+
+  area.innerHTML = `<div class="urine-results-card">
+    <div class="urine-results-title">📋 判定結果（N-マルティスティックス SG-L）</div>
+    ${rows}
+    <div>
+      <button class="urine-copy-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(text)}).then(()=>alert('コピーしました'))">📋 結果をコピー</button>
+      <button class="urine-new-btn" onclick="urineReset()">🔄 新しい検査</button>
+    </div>
+  </div>`;
+  area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function urineInit() {
+  urineReset();
+}
+
 /* ── 起動 ── */
 setupAutocomplete('from');
 setupAutocomplete('to');
 setupTodayAutocomplete();
 setupCSV();
+urineInit();
 (async () => {
   const { data: { session } } = await db.auth.getSession();
   if (session) load();
