@@ -96,20 +96,43 @@ header {
 }
 header h1 { font-size: 17px; font-weight: 800; }
 .header-right { display: flex; align-items: center; gap: 20px; }
-.tabs { display: flex; gap: 4px; }
-.tab {
-  padding: 7px 18px;
-  border-radius: 6px;
+.mode-tabs { display: flex; gap: 6px; }
+.mode-tab {
+  padding: 7px 16px;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   color: rgba(255,255,255,0.65);
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: transparent;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.mode-tab:hover { background: rgba(255,255,255,0.12); color: white; }
+.mode-tab.active { background: rgba(255,255,255,0.2); color: white; border-color: rgba(255,255,255,0.45); }
+
+.sub-nav {
+  background: #172f55;
+  display: flex;
+  padding: 0 16px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 6px 14px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
   transition: all 0.15s;
   border: none;
   background: none;
+  font-family: inherit;
 }
-.tab:hover { background: rgba(255,255,255,0.15); color: white; }
-.tab.active { background: rgba(255,255,255,0.2); color: white; }
+.tab:hover { background: rgba(255,255,255,0.12); color: white; }
+.tab.active { background: rgba(255,255,255,0.18); color: white; }
 .status-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: rgba(255,255,255,0.75); }
 .qr-btn {
   background: rgba(255,255,255,0.15); border: 1.5px solid rgba(255,255,255,0.3);
@@ -565,9 +588,8 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
   body { overflow: auto; }
 
   header { padding: 0 12px; height: auto; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
-  header h1 { font-size: 14px; }
-  .tabs { gap: 2px; }
-  .tab { padding: 6px 10px; font-size: 12px; }
+  .mode-tab { padding: 6px 12px; font-size: 12px; }
+  .tab { padding: 5px 10px; font-size: 11px; }
   .status-badge { font-size: 11px; }
   .qr-btn { padding: 4px 8px; font-size: 11px; }
 
@@ -752,14 +774,11 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
 </div>
 
 <header>
-  <h1>🚗 訪問診療ナビ</h1>
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="mode-nav-btn" onclick="showMode('nav')">🚗 訪問診療ナビ</button>
+    <button class="mode-tab" id="mode-urine-btn" onclick="showMode('urine')">🧪 テステープ</button>
+  </div>
   <div class="header-right">
-    <div class="tabs">
-      <button class="tab active" onclick="showTab('route')">ルート検索</button>
-      <button class="tab" onclick="showTab('today')">本日の訪問</button>
-      <button class="tab" onclick="showTab('manage')">患者管理</button>
-      <button class="tab" onclick="showTab('urine')">尿検査</button>
-    </div>
     <div class="status-badge">
       <span class="dot loading" id="dot"></span>
       <span id="status-txt">接続中...</span>
@@ -767,6 +786,11 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
     <button class="qr-btn" onclick="showQR()" title="QRコードを表示">QR</button>
   </div>
 </header>
+<div class="sub-nav" id="sub-nav">
+  <button class="tab active" onclick="showTab('route')">ルート検索</button>
+  <button class="tab" onclick="showTab('today')">本日の訪問</button>
+  <button class="tab" onclick="showTab('manage')">患者管理</button>
+</div>
 
 <main>
 
@@ -975,14 +999,33 @@ function setStatus(state, text) {
   document.getElementById('status-txt').textContent = text;
 }
 
-/* ── タブ ── */
+/* ── ナビゲーション ── */
+let currentSubTab = 'route';
+
+function showMode(mode) {
+  document.getElementById('mode-nav-btn').classList.toggle('active', mode === 'nav');
+  document.getElementById('mode-urine-btn').classList.toggle('active', mode === 'urine');
+  const subNav = document.getElementById('sub-nav');
+  if (mode === 'nav') {
+    subNav.style.display = 'flex';
+    showTab(currentSubTab);
+  } else {
+    subNav.style.display = 'none';
+    document.getElementById('route-screen').style.display  = 'none';
+    document.getElementById('today-screen').style.display  = 'none';
+    document.getElementById('manage-screen').style.display = 'none';
+    document.getElementById('urine-screen').style.display  = 'block';
+  }
+}
+
 function showTab(tab) {
+  currentSubTab = tab;
   document.getElementById('route-screen').style.display  = tab === 'route'  ? 'flex'  : 'none';
   document.getElementById('today-screen').style.display  = tab === 'today'  ? 'block' : 'none';
   document.getElementById('manage-screen').style.display = tab === 'manage' ? 'block' : 'none';
-  document.getElementById('urine-screen').style.display  = tab === 'urine'  ? 'block' : 'none';
-  document.querySelectorAll('.tab').forEach((el, i) =>
-    el.classList.toggle('active', ['route','today','manage','urine'][i] === tab));
+  document.getElementById('urine-screen').style.display  = 'none';
+  document.querySelectorAll('.sub-nav .tab').forEach((el, i) =>
+    el.classList.toggle('active', ['route','today','manage'][i] === tab));
 }
 
 /* ── オートコンプリート ── */
@@ -1581,15 +1624,18 @@ const URINE_ITEMS = [
     colors:['#f2ede0','#e8a090'] },
   { id:'urobilinogen', name:'ウロビリノーゲン',  readAt:60,  stripPos:3,
     values:['0.1\n(正常)','1','2','4','8'],
+    copyValues:['0.1','1','2','4','8'],
     colors:['#f0c8a0','#e89060','#d86048','#c83838','#a01820'] },
   { id:'protein',      name:'尿タンパク',         readAt:60,  stripPos:4,
     values:['陰性','±','30\n(1+)','100\n(2+)','300\n(3+)','1,000\n(4+)'],
+    copyValues:['陰性','±','1+','2+','3+','4+'],
     colors:['#ccd868','#94c848','#60a830','#309868','#147858','#065040'] },
   { id:'ph',           name:'pH',                readAt:60,  stripPos:5,
     values:['5.0','6.0','6.5','7.0','7.5','8.0','8.5'],
     colors:['#e05818','#d89018','#c8b010','#98a820','#687818','#307820','#107868'] },
   { id:'blood',        name:'尿潜血',             readAt:60,  stripPos:6,
     values:['陰性','±\n非溶血','±\n溶血','1+','2+','3+'],
+    copyValues:['陰性','±(非溶血)','±(溶血)','1+','2+','3+'],
     colors:['#e8a028','#d87828','#c8a050','#787828','#504818','#303810'] },
   { id:'leukocyte',    name:'白血球',            readAt:120, stripPos:1,
     values:['陰性','±','1+','2+','3+'],
@@ -1755,11 +1801,13 @@ function urineShowResults() {
     </div>`;
   }).join('');
 
-  urineLastResultText = URINE_ITEMS.map(item => {
+  const COPY_ORDER = ['leukocyte','nitrite','protein','blood','glucose','ketone','sg','bilirubin','urobilinogen','ph'];
+  urineLastResultText = COPY_ORDER.map(id => {
+    const item = URINE_ITEMS.find(x => x.id === id);
     const idx = urineSelections[item.id];
     const vals = item.copyValues || item.values;
-    return `${item.name}: ${idx != null ? vals[idx].replace(/\n/g,'') : '未選択'}`;
-  }).join('\n');
+    return `${item.name}:${idx != null ? vals[idx].replace(/\n/g,'') : '未選択'}`;
+  }).join(' ');
 
   area.innerHTML = `<div class="urine-results-card">
     <div class="urine-results-title">📋 判定結果（N-マルティスティックス SG-L）</div>
