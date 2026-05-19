@@ -275,10 +275,6 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
           <input type="date" id="visit-date" onchange="loadRouteFromSupabase()">
         </div>
         <div class="cond-item">
-          <label>最早出発</label>
-          <input type="time" id="first-min" value="09:30" step="900">
-        </div>
-        <div class="cond-item">
           <label>最初の到着 希望</label>
           <input type="time" id="first-target" value="10:00" step="900">
         </div>
@@ -1106,7 +1102,6 @@ async function optimize() {
   try {
     const dateStr = document.getElementById('visit-date').value;
     const dayName = getDayName(dateStr);
-    const firstMin = timeToMin(document.getElementById('first-min').value);
     const firstTarget = timeToMin(document.getElementById('first-target').value);
     const returnTarget = timeToMin(document.getElementById('return-target').value);
     const lunchEnabled = document.getElementById('lunch-toggle').checked;
@@ -1135,7 +1130,7 @@ async function optimize() {
 
     // 訪問順序を決める：固定時刻患者を先に確保、その他を貪欲+局所探索
     const result = solveSchedule(matrix, todayList, feasWins, annotations, {
-      firstMin, firstTarget, returnTarget,
+      firstTarget, returnTarget,
       lunchEnabled, lunchDuration, returnClinic
     });
 
@@ -1151,9 +1146,78 @@ async function optimize() {
   }
 }
 
+/* ── 同一住所クラスター構築 ── */
+function buildClusters(items) {
+  const addrMap = new Map();
+  items.forEach((item, i) => {
+    const addr = (item.patient.address || '').trim();
+    if (!addrMap.has(addr)) addrMap.set(addr, []);
+    addrMap.get(addr).push(i);
+  });
+  return [...addrMap.values()];
+}
+
+/* クラスター順序を患者順序に展開し、内部順列ごとに結果を返す */
+function expandClusters(ci, currentOrder, clusterOrd, clusters, matrix, items, feasWins, annotations, cfg, onResult) {
+  if (ci === clusterOrd.length) {
+    onResult(simulateSchedule(currentOrder, matrix, items, feasWins, annotations, cfg));
+    return;
+  }
+  const cluster = clusters[clusterOrd[ci]];
+  const perms = cluster.length <= 4 ? permutations(cluster) : [cluster];
+  for (const perm of perms)
+    expandClusters(ci + 1, [...currentOrder, ...perm], clusterOrd, clusters, matrix, items, feasWins, annotations, cfg, onResult);
+}
+
+/* 同一住所クラスターを一塊にして最適化 */
+function solveScheduleClustered(clusters, matrix, items, feasWins, annotations, cfg) {
+  const C = clusters.length;
+  const reps = clusters.map(c => c[0]);
+
+  // クラスター代表患者による距離行列（クリニック=[0]）
+  const cMat = Array.from({length: C + 1}, () => Array(C + 1).fill(0));
+  for (let a = 0; a < C; a++) {
+    cMat[0][a + 1] = matrix[0][reps[a] + 1];
+    cMat[a + 1][0] = matrix[reps[a] + 1][0];
+    for (let b = 0; b < C; b++)
+      if (a !== b) cMat[a + 1][b + 1] = matrix[reps[a] + 1][reps[b] + 1];
+  }
+  const cItems      = reps.map(i => items[i]);
+  const cFeasWins   = reps.map(i => feasWins[i]);
+  const cAnnotations = reps.map(i => annotations[i]);
+
+  // クラスターレベルで訪問順候補を生成
+  let clusterOrders;
+  if (C <= 7) {
+    clusterOrders = permutations([...Array(C).keys()]);
+    clusterOrders.sort((a, b) =>
+      schedScore(simulateSchedule(a, cMat, cItems, cFeasWins, cAnnotations, cfg)) -
+      schedScore(simulateSchedule(b, cMat, cItems, cFeasWins, cAnnotations, cfg))
+    );
+    clusterOrders = clusterOrders.slice(0, 10);
+  } else {
+    clusterOrders = [constraintFirstInsert(cMat, cItems, cFeasWins, cAnnotations, cfg, false)];
+    for (let i = 0; i < 9; i++)
+      clusterOrders.push(constraintFirstInsert(cMat, cItems, cFeasWins, cAnnotations, cfg, true));
+  }
+
+  // 各クラスター順 × 各クラスター内順列を全評価
+  let bestResult = null;
+  for (const clusterOrd of clusterOrders)
+    expandClusters(0, [], clusterOrd, clusters, matrix, items, feasWins, annotations, cfg, r => {
+      if (!bestResult || schedScore(r) < schedScore(bestResult)) bestResult = r;
+    });
+  return bestResult;
+}
+
 /* ── スケジューラ本体 ── */
 function solveSchedule(matrix, items, feasWins, annotations, cfg) {
   const N = items.length;
+
+  // 同一住所の患者は必ず連続訪問（絶対ルール）
+  const clusters = buildClusters(items);
+  if (clusters.some(c => c.length > 1))
+    return solveScheduleClustered(clusters, matrix, items, feasWins, annotations, cfg);
 
   if (N <= 7) {
     // 全順列を試す（N! ≦ 5040）→ 最適解が保証される
@@ -1326,7 +1390,7 @@ function shuffleArr(arr) {
 function runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg) {
   const N = order.length;
   const visits = [];
-  let currentTime = 9 * 60;  // ハード下限 9:00（cfg.firstMin は「出発目安」としてペナルティに使用）
+  let currentTime = 9 * 60;
   let infeasibleCount = 0;
   let lateMin = 0;
   let lunchTaken = false;
@@ -1352,7 +1416,6 @@ function runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg
     const matIdx = pIdx + 1;
     const travelUsed = matrix[prevMatIdx][matIdx];
     let earliest = currentTime + travelUsed;
-    if (step === 0) earliest = Math.max(earliest, cfg.firstMin);
     earliest = roundUp15(earliest);
 
     const windows = feasWins[pIdx];
@@ -1392,12 +1455,9 @@ function runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg
   totalTravel += returnTravel;
 
   const firstPatient = visits.find(v => v.type === 'patient');
-  const firstArrival = firstPatient ? firstPatient.arrival : cfg.firstMin;
-  const firstDepart = firstPatient ? firstArrival - firstPatient.travel : cfg.firstMin;
-  const startDelay = Math.max(0, firstArrival - cfg.firstTarget);   // 10:00着より遅れた分
-  // 出発が cfg.firstMin（9:30目安）より早い場合も startEarly に加算（患者が多ければ優先度低い）
-  const startEarly = Math.max(0, cfg.firstTarget - firstArrival)
-                   + Math.max(0, cfg.firstMin - firstDepart) * 0.5;
+  const firstArrival = firstPatient ? firstPatient.arrival : cfg.firstTarget;
+  const startDelay = Math.max(0, firstArrival - cfg.firstTarget);
+  const startEarly = Math.max(0, cfg.firstTarget - firstArrival);
 
   return {
     order, visits, returnTime, infeasibleCount, lateMin,
@@ -2101,7 +2161,6 @@ async function cancelPatientFromResult(externalId) {
       return {isFixed:ov?false:!!mp.fixed_time, fixedTime:(!ov&&mp.fixed_time)?timeToMin(mp.fixed_time):null, prefDays:mp.preferred_days||[], prefTime:mp.preferred_time};
     });
     const cfg = {
-      firstMin: timeToMin(document.getElementById('first-min').value),
       firstTarget: timeToMin(document.getElementById('first-target').value),
       returnTarget: timeToMin(document.getElementById('return-target').value),
       lunchEnabled: document.getElementById('lunch-toggle').checked,
