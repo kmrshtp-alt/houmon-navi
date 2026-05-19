@@ -1765,7 +1765,6 @@ function urineStart() {
     if (urineElapsed >= 120) {
       clearInterval(urineInterval);
       urineRunning = false;
-      urineShowResults();
     }
   }, 1000);
 }
@@ -1786,7 +1785,7 @@ function urineSelect(id, idx) {
   if (!item || urineElapsed < item.readAt) return;
   urineSelections[id] = idx;
   urineRenderItems();
-  if (!urineRunning && urineElapsed >= 120) urineShowResults();
+  if (!urineRunning && urineElapsed >= 120 && urineSelections['leukocyte'] != null) urineShowResults();
 }
 
 function urineShowResults() {
