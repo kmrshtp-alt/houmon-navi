@@ -1390,7 +1390,7 @@ function shuffleArr(arr) {
 function runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg) {
   const N = order.length;
   const visits = [];
-  let currentTime = 9 * 60;
+  let currentTime = 0;  // 絶対的な出発時刻は不要（firstTarget で到着時刻を直接保証）
   let infeasibleCount = 0;
   let lateMin = 0;
   let lunchTaken = false;
@@ -1416,6 +1416,8 @@ function runSimulation(order, lunchAt, matrix, items, feasWins, annotations, cfg
     const matIdx = pIdx + 1;
     const travelUsed = matrix[prevMatIdx][matIdx];
     let earliest = currentTime + travelUsed;
+    // 最初の患者は firstTarget（第1号患者到着目標時刻）より早く訪問しない
+    if (step === 0) earliest = Math.max(earliest, cfg.firstTarget);
     earliest = roundUp15(earliest);
 
     const windows = feasWins[pIdx];
