@@ -1049,6 +1049,7 @@ function setupAutocomplete(slot) {
 
   input.addEventListener('input', () => {
     idx = -1;
+    updateNavBtn();
     const q = input.value.trim();
     if (!q) { sugList.style.display = 'none'; return; }
 
@@ -1139,16 +1140,21 @@ function swapPatients() {
 }
 
 function updateNavBtn() {
-  document.getElementById('nav-btn').disabled = !fromPatient || !toPatient;
+  const fromVal = fromPatient || document.getElementById('from-input').value.trim();
+  const toVal   = toPatient   || document.getElementById('to-input').value.trim();
+  document.getElementById('nav-btn').disabled = !fromVal || !toVal;
 }
 
 function openMaps() {
-  if (!fromPatient || !toPatient) return;
-  const d = encodeURIComponent(toPatient.address);
+  const fromAddr = fromPatient ? fromPatient.address : document.getElementById('from-input').value.trim();
+  const toAddr   = toPatient   ? toPatient.address   : document.getElementById('to-input').value.trim();
+  if (!fromAddr || !toAddr) return;
+  const d = encodeURIComponent(toAddr);
   let url = `https://www.google.com/maps/dir/?api=1&destination=${d}&travelmode=driving`;
-  // 現在地から出発の場合は origin を省略 → Google マップが現在地を使用
-  if (fromPatient.id !== '__current__') {
-    url += `&origin=${encodeURIComponent(fromPatient.address)}`;
+  // 現在地から出発の場合（fromPatient.id === '__current__'）は origin を省略
+  const isCurrentLoc = fromPatient && fromPatient.id === '__current__';
+  if (!isCurrentLoc) {
+    url += `&origin=${encodeURIComponent(fromAddr)}`;
   }
   window.open(url, '_blank');
 }
