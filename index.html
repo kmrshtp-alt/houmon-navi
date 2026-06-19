@@ -960,6 +960,22 @@ let patients = [];
 let fromPatient = null;
 let toPatient   = null;
 
+// 福岡主要病院（ルート検索サジェスト用）
+const HOSPITALS = [
+  { id:'h_kyudai',      name:'九州大学病院',       furigana:'きゅうしゅうだいがくびょういん',   address:'福岡市東区馬出3-1-1' },
+  { id:'h_sekijuji',    name:'福岡赤十字病院',      furigana:'ふくおかせきじゅうじびょういん',   address:'福岡県福岡市南区大楠3丁目1-1' },
+  { id:'h_kodomo',      name:'福岡市立こども病院',  furigana:'ふくおかしりつこどもびょういん',   address:'福岡市東区香椎照葉5丁目1番1号' },
+  { id:'h_tokushu',     name:'福岡徳洲会病院',      furigana:'ふくおかとくしゅうかいびょういん', address:'福岡県春日市須玖北4丁目5番地' },
+  { id:'h_saiseikai',   name:'福岡済生会病院',      furigana:'ふくおかさいせいかいびょういん',   address:'福岡市中央区天神1-3-46' },
+  { id:'h_chuo',        name:'福岡中央病院',        furigana:'ふくおかちゅうおうびょういん',     address:'福岡県福岡市中央区薬院2-6-11' },
+  { id:'h_kyuchuo',     name:'九州中央病院',        furigana:'きゅうしゅうちゅうおうびょういん', address:'福岡市南区塩原3丁目23-1' },
+  { id:'h_kyuiryo',     name:'九州医療センター',    furigana:'きゅうしゅういりょうせんたー',     address:'福岡市中央区地行浜1丁目8番1号' },
+  { id:'h_fukudai',     name:'福岡大学病院',        furigana:'ふくおかだいがくびょういん',       address:'福岡市城南区七隈七丁目45番1号' },
+  { id:'h_chikushi',    name:'福岡大学筑紫病院',    furigana:'ふくおかだいがくちくしびょういん', address:'福岡県筑紫野市俗明院一丁目1番1号' },
+  { id:'h_fukuokah',    name:'福岡病院',            furigana:'ふくおかびょういん',               address:'福岡市南区屋形原4-39-1' },
+  { id:'h_kinenkai',    name:'福岡記念病院',        furigana:'ふくおかきねんびょういん',         address:'福岡市早良区西新1丁目1番35号' },
+];
+
 /* ── データ ── */
 async function load() {
   const { data, error } = await db.from('patients').select('*')
@@ -1053,7 +1069,9 @@ function setupAutocomplete(slot) {
     const q = input.value.trim();
     if (!q) { sugList.style.display = 'none'; return; }
 
-    const hits = patients.filter(p => matchQ(p, q)).slice(0, 8);
+    const patientHits  = patients.filter(p => matchQ(p, q));
+    const hospitalHits = HOSPITALS.filter(p => matchQ(p, q));
+    const hits = [...patientHits, ...hospitalHits].slice(0, 8);
     if (hits.length === 0) {
       sugList.innerHTML = '<div class="suggest-empty">該当なし</div>';
       sugList.style.display = 'block';
@@ -1065,17 +1083,19 @@ function setupAutocomplete(slot) {
       const hira = toHira(p.furigana || '');
       const hiName = esc(p.name).replace(esc(input.value.trim()), m => `<mark>${m}</mark>`);
       const hiFuri = hira ? esc(hira).replace(esc(hq), m => `<mark>${m}</mark>`) : '';
+      const isHosp = p.id.startsWith('h_');
       return `<div class="suggest-item" data-id="${p.id}">
-        <div class="s-name">${hiName}</div>
+        <div class="s-name">${hiName}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div>
         ${hiFuri ? `<div class="s-furi">${hiFuri}</div>` : ''}
         <div class="s-addr">${esc(p.address)}</div>
       </div>`;
     }).join('');
 
+    const allCandidates = [...patients, ...HOSPITALS];
     sugList.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('mousedown', e => {
         e.preventDefault();
-        const p = patients.find(x => x.id === el.dataset.id);
+        const p = allCandidates.find(x => x.id === el.dataset.id);
         if (p) selectPatient(slot, p);
       });
     });
