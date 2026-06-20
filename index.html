@@ -1168,11 +1168,11 @@ function updateNavBtn() {
 function openMaps() {
   const fromAddr = fromPatient ? fromPatient.address : document.getElementById('from-input').value.trim();
   const toAddr   = toPatient   ? toPatient.address   : document.getElementById('to-input').value.trim();
-  if (!fromAddr || !toAddr) return;
+  const isCurrentLoc = fromPatient && fromPatient.id === '__current__';
+  if ((!isCurrentLoc && !fromAddr) || !toAddr) return;
   const d = encodeURIComponent(toAddr);
   let url = `https://www.google.com/maps/dir/?api=1&destination=${d}&travelmode=driving`;
   // 現在地から出発の場合（fromPatient.id === '__current__'）は origin を省略
-  const isCurrentLoc = fromPatient && fromPatient.id === '__current__';
   if (!isCurrentLoc) {
     url += `&origin=${encodeURIComponent(fromAddr)}`;
   }
