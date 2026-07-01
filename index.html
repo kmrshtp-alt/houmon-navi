@@ -1605,12 +1605,29 @@ function setupDragReorder() {
 function openFullRoute() {
   const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
   if (fullList.length < 2) return;
-  const origin      = encodeURIComponent(fullList[0].address);
-  const destination = encodeURIComponent(fullList[fullList.length - 1].address);
-  const waypoints   = fullList.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
-  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-  if (waypoints) url += `&waypoints=${waypoints}`;
-  window.open(url, '_blank');
+
+  // Google Maps URL API のウェイポイント上限は10件（= 12ストップ）
+  const MAX_STOPS = 12;
+
+  function buildMapsUrl(stops) {
+    const origin      = encodeURIComponent(stops[0].address);
+    const destination = encodeURIComponent(stops[stops.length - 1].address);
+    const waypoints   = stops.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    if (waypoints) url += `&waypoints=${waypoints}`;
+    return url;
+  }
+
+  if (fullList.length <= MAX_STOPS) {
+    window.open(buildMapsUrl(fullList), '_blank');
+  } else {
+    // 12件超の場合は前半・後半に分割して2つのウィンドウで開く
+    const mid = Math.ceil(fullList.length / 2);
+    const first  = fullList.slice(0, mid + 1);   // 0〜mid（midを終点に）
+    const second = fullList.slice(mid);           // mid〜末尾（midを起点に）
+    window.open(buildMapsUrl(first),  '_blank');
+    window.open(buildMapsUrl(second), '_blank');
+  }
 }
 
 /* ── QR コード ── */
