@@ -1458,21 +1458,22 @@ function setupTodayAutocomplete() {
     idx = -1;
     const q = input.value.trim();
     if (!q) { sug.style.display = 'none'; return; }
-    const hits = patients.filter(p => matchQ(p, q)).slice(0, 8);
+    const allCandidates = [...patients, ...HOSPITALS];
+    const hits = allCandidates.filter(p => matchQ(p, q)).slice(0, 8);
     if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
-      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}</div><div class="s-addr">${esc(p.address)}</div></div>`;
+      const isHosp = p.id.startsWith('h_');
+      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div><div class="s-addr">${esc(p.address)}</div></div>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('touchstart', e => {
-        e.preventDefault(); // iOS: タップで input が first responder を失わないように既定動作を抑止
+        e.preventDefault();
         selecting = true;
       }, { passive: false });
       el.addEventListener('touchend', e => {
-        e.preventDefault(); // synthetic mouse/click を発火させない
-        const p = patients.find(x => x.id === el.dataset.id);
-        // DOM mutation の前にユーザージェスチャー内で focus を確立
+        e.preventDefault();
+        const p = allCandidates.find(x => x.id === el.dataset.id);
         input.focus();
         if (p) addToToday(p);
         input.value = '';
@@ -1480,12 +1481,11 @@ function setupTodayAutocomplete() {
         selecting = false;
       });
       el.addEventListener('mousedown', e => {
-        e.preventDefault(); // デスクトップ: blur を防ぐ
+        e.preventDefault();
         selecting = true;
       });
       el.addEventListener('click', () => {
-        // デスクトップのみ到達
-        const p = patients.find(x => x.id === el.dataset.id);
+        const p = allCandidates.find(x => x.id === el.dataset.id);
         input.focus();
         if (p) addToToday(p);
         input.value = '';
