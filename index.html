@@ -857,8 +857,7 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
         <div id="visit-list"></div>
       </div>
 
-      <button class="calc-btn" id="calc-btn" onclick="openFullRoute()" disabled>🗺️ Google Maps で全行程を開く</button>
-      <div id="route-split-note" style="display:none;font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;margin-top:8px;text-align:center;"></div>
+      <div id="route-btn-area"></div>
 
     </div>
   </div>
@@ -1538,17 +1537,21 @@ function renderTodayList() {
   const btn  = document.getElementById('calc-btn');
   const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
 
-  const note = document.getElementById('route-split-note');
-  if (fullList.length === 0) { card.style.display = 'none'; btn.disabled = true; note.style.display = 'none'; return; }
+  const btnArea = document.getElementById('route-btn-area');
+  if (fullList.length === 0) { card.style.display = 'none'; btnArea.innerHTML = ''; return; }
   card.style.display = 'block';
-  btn.disabled = fullList.length < 2;
 
   if (fullList.length > 12) {
-    const second = fullList.length - 11;
-    note.textContent = `⚠️ Google Maps は1画面12件まで対応。${fullList.length}件のため自動的に2画面に分割して開きます（1〜11件目 / 11件目〜${fullList.length}件目）`;
-    note.style.display = 'block';
+    btnArea.innerHTML = `
+      <div style="font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;margin-bottom:8px;text-align:center;">
+        ⚠️ Google Maps は1画面12件まで。前半・後半に分けて開いてください。
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="calc-btn" style="flex:1;font-size:13px;" onclick="openFullRoute(0)">🗺️ 前半（1〜11件目）</button>
+        <button class="calc-btn" style="flex:1;font-size:13px;" onclick="openFullRoute(1)">🗺️ 後半（11〜${fullList.length - (clinicStart?1:0)}件目）</button>
+      </div>`;
   } else {
-    note.style.display = 'none';
+    btnArea.innerHTML = `<button class="calc-btn" ${fullList.length < 2 ? 'disabled' : ''} onclick="openFullRoute()">🗺️ Google Maps で全行程を開く</button>`;
   }
 
   const mobile = window.innerWidth <= 640 || ('ontouchstart' in window);
@@ -1612,12 +1615,9 @@ function setupDragReorder() {
 }
 
 /* ── 全行程 Google Maps ── */
-function openFullRoute() {
+function openFullRoute(segment) {
   const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
   if (fullList.length < 2) return;
-
-  // Google Maps URL API のウェイポイント上限は10件（= 12ストップ）
-  const MAX_STOPS = 12;
 
   function buildMapsUrl(stops) {
     const origin      = encodeURIComponent(stops[0].address);
@@ -1628,14 +1628,12 @@ function openFullRoute() {
     return url;
   }
 
-  if (fullList.length <= MAX_STOPS) {
+  if (fullList.length <= 12 || segment === undefined) {
     window.open(buildMapsUrl(fullList), '_blank');
+  } else if (segment === 0) {
+    window.open(buildMapsUrl(fullList.slice(0, 12)), '_blank');   // 1〜11件目
   } else {
-    // 12件超の場合：最初の12ストップを1画面目、残りを2画面目
-    const first  = fullList.slice(0, MAX_STOPS);           // 0〜11
-    const second = fullList.slice(MAX_STOPS - 1);          // 11〜末尾（11番目を起点に）
-    window.open(buildMapsUrl(first),  '_blank');
-    window.open(buildMapsUrl(second), '_blank');
+    window.open(buildMapsUrl(fullList.slice(11)), '_blank');      // 11件目〜末尾
   }
 }
 
