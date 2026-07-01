@@ -858,6 +858,7 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
       </div>
 
       <button class="calc-btn" id="calc-btn" onclick="openFullRoute()" disabled>🗺️ Google Maps で全行程を開く</button>
+      <div id="route-split-note" style="display:none;font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;margin-top:8px;text-align:center;"></div>
 
     </div>
   </div>
@@ -1537,9 +1538,18 @@ function renderTodayList() {
   const btn  = document.getElementById('calc-btn');
   const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
 
-  if (fullList.length === 0) { card.style.display = 'none'; btn.disabled = true; return; }
+  const note = document.getElementById('route-split-note');
+  if (fullList.length === 0) { card.style.display = 'none'; btn.disabled = true; note.style.display = 'none'; return; }
   card.style.display = 'block';
   btn.disabled = fullList.length < 2;
+
+  if (fullList.length > 12) {
+    const second = fullList.length - 11;
+    note.textContent = `⚠️ Google Maps は1画面12件まで対応。${fullList.length}件のため自動的に2画面に分割して開きます（1〜11件目 / 11件目〜${fullList.length}件目）`;
+    note.style.display = 'block';
+  } else {
+    note.style.display = 'none';
+  }
 
   const mobile = window.innerWidth <= 640 || ('ontouchstart' in window);
   list.innerHTML = fullList.map((p, i) => {
