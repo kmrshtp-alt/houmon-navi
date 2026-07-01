@@ -1621,10 +1621,9 @@ function openFullRoute() {
   if (fullList.length <= MAX_STOPS) {
     window.open(buildMapsUrl(fullList), '_blank');
   } else {
-    // 12件超の場合は前半・後半に分割して2つのウィンドウで開く
-    const mid = Math.ceil(fullList.length / 2);
-    const first  = fullList.slice(0, mid + 1);   // 0〜mid（midを終点に）
-    const second = fullList.slice(mid);           // mid〜末尾（midを起点に）
+    // 12件超の場合：最初の12ストップを1画面目、残りを2画面目
+    const first  = fullList.slice(0, MAX_STOPS);           // 0〜11
+    const second = fullList.slice(MAX_STOPS - 1);          // 11〜末尾（11番目を起点に）
     window.open(buildMapsUrl(first),  '_blank');
     window.open(buildMapsUrl(second), '_blank');
   }
