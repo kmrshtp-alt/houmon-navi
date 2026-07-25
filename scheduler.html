@@ -477,7 +477,7 @@ async function init() {
   setupSearch();
   renderTodayList();
   await loadMapsUsage();
-  await gcpInitDisplay();
+  updateMapsUsageDisplay();
   buildDoctorSelect();
 }
 
@@ -2184,227 +2184,16 @@ async function cancelPatientFromResult(externalId) {
   }
 }
 
-/* ── Google Cloud Monitoring API 連携（Distance Matrix 実使用量取得） ── */
-const GCP_PROJECT = 'houmon-navi-scheduler';
-const GCP_CLIENT_ID = '978633506719-neerlkj1dhk4u2ea9d2iuomdba8948gb.apps.googleusercontent.com';
-const GCP_CLIENT_SECRET = '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';
-const GCP_REDIRECT_URI = 'https://kmrshtp-alt.github.io/houmon-navi/';
-const GCP_SCOPE = 'https://www.googleapis.com/auth/monitoring.read';
-const GCP_TOKEN_KEY = 'gcp_oauth_token';
-
-/* PKCE ユーティリティ */
-function gcpGenerateCodeVerifier() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let v = '';
-  const arr = new Uint8Array(128);
-  crypto.getRandomValues(arr);
-  arr.forEach(b => { v += chars[b % chars.length]; });
-  return v;
-}
-
-async function gcpCodeVerifierToChallenge(verifier) {
-  const data = new TextEncoder().encode(verifier);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-/* OAuth 認可 URL への遷移（ポップアップ方式 → ページ遷移なし）
-   verifier を state に含めることでポップアップ自身がトークン交換を完結できる
-   → オリジンを問わず（file:// 親でも）動作する */
-async function gcpStartOAuth() {
-  const verifier = gcpGenerateCodeVerifier();
-  const challenge = await gcpCodeVerifierToChallenge(verifier);
-  // state に verifier を埋め込む（ポップアップが自力でコード交換するため）
-  const state = 'gcp_monitoring_oauth:' + verifier;
-  const params = new URLSearchParams({
-    client_id: GCP_CLIENT_ID,
-    redirect_uri: GCP_REDIRECT_URI,
-    response_type: 'code',
-    scope: GCP_SCOPE,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    access_type: 'offline',
-    prompt: 'consent',
-    state,
-  });
-  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
-
-  const popup = window.open(authUrl, 'gcp_oauth_popup', 'width=520,height=640,scrollbars=yes,resizable=yes');
-  if (!popup) {
-    window.location.href = authUrl; // ポップアップブロック時はフォールバック
-    return;
-  }
-
-  // ポップアップが閉じたら表示を更新（オリジン問わず動作）
-  const pollClosed = setInterval(async () => {
-    if (!popup.closed) return;
-    clearInterval(pollClosed);
-    clearTimeout(timeout);
-    bcChannel.close();
-    // ポップアップがトークンを Supabase に保存済みのはずなので再初期化
-    await gcpInitDisplay();
-  }, 600);
-
-  // BroadcastChannel で同一オリジン時に即時通知を受け取る（最適化）
-  const bcChannel = new BroadcastChannel('gcp_oauth_channel');
-  bcChannel.onmessage = async (e) => {
-    if (e.data?.type !== 'gcp_oauth_done') return;
-    clearInterval(pollClosed);
-    clearTimeout(timeout);
-    bcChannel.close();
-    popup?.close();
-    await gcpInitDisplay();
-  };
-
-  const timeout = setTimeout(() => {
-    clearInterval(pollClosed);
-    bcChannel.close();
-  }, 300000);
-}
-
-/* 認可コード → トークン交換（verifier を直接渡す） */
-async function gcpExchangeCode(code, verifier) {
-  if (!verifier) throw new Error('PKCE verifier が見つかりません');
-  const resp = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: GCP_CLIENT_ID,
-      client_secret: GCP_CLIENT_SECRET,
-      redirect_uri: GCP_REDIRECT_URI,
-      grant_type: 'authorization_code',
-      code,
-      code_verifier: verifier,
-    }).toString(),
-  });
-  if (!resp.ok) throw new Error('トークン交換失敗: ' + (await resp.text()));
-  return await resp.json();
-}
-
-/* トークン保存 */
-async function gcpSaveToken(tokenObj) {
-  tokenObj.expires_at = Date.now() + (tokenObj.expires_in || 3600) * 1000;
-  await db.from('app_settings').upsert(
-    { key: GCP_TOKEN_KEY, value: JSON.stringify(tokenObj), updated_at: new Date().toISOString() },
-    { onConflict: 'key' }
-  );
-}
-
-/* トークン読み込み */
-async function gcpLoadToken() {
-  try {
-    const { data } = await db.from('app_settings').select('value').eq('key', GCP_TOKEN_KEY).maybeSingle();
-    if (data?.value) return JSON.parse(data.value);
-  } catch(e) { /* ignore */ }
-  return null;
-}
-
-/* トークンリフレッシュ */
-async function gcpRefreshToken(refreshToken) {
-  const resp = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: GCP_CLIENT_ID,
-      client_secret: GCP_CLIENT_SECRET,
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-    }).toString(),
-  });
-  if (!resp.ok) throw new Error('トークンリフレッシュ失敗: ' + (await resp.text()));
-  return await resp.json();
-}
-
-/* 有効なアクセストークンを取得（期限切れなら自動更新） */
-async function gcpGetAccessToken() {
-  let token = await gcpLoadToken();
-  if (!token) return null;
-  if (token.expires_at && Date.now() > token.expires_at - 60000) {
-    // 有効期限切れ（1分前） → リフレッシュ
-    if (!token.refresh_token) return null;
-    try {
-      const refreshed = await gcpRefreshToken(token.refresh_token);
-      refreshed.refresh_token = refreshed.refresh_token || token.refresh_token;
-      await gcpSaveToken(refreshed);
-      token = refreshed;
-    } catch(e) {
-      console.warn('トークンリフレッシュ失敗:', e.message);
-      return null;
-    }
-  }
-  return token.access_token || null;
-}
-
-/* Monitoring API で今月の Distance Matrix リクエスト数を取得 */
-async function gcpFetchMonthlyUsage() {
-  const accessToken = await gcpGetAccessToken();
-  if (!accessToken) return null;
-
-  const now = new Date();
-  const startTime = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
-
-  const params = new URLSearchParams({
-    'filter': 'metric.type="serviceruntime.googleapis.com/api/request_count" AND resource.labels.service="distance-matrix-backend.googleapis.com"',
-    'interval.startTime': startTime,
-    'interval.endTime': endTime,
-    'aggregation.alignmentPeriod': '2678400s',
-    'aggregation.perSeriesAligner': 'ALIGN_SUM',
-    'aggregation.crossSeriesReducer': 'REDUCE_SUM',
-    'aggregation.groupByFields': 'resource.labels.service',
-  });
-
-  const resp = await fetch(
-    `https://monitoring.googleapis.com/v3/projects/${GCP_PROJECT}/timeSeries?${params.toString()}`,
-    { headers: { 'Authorization': 'Bearer ' + accessToken } }
-  );
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Monitoring API エラー ${resp.status}: ${errText}`);
-  }
-  const json = await resp.json();
-  const point = json?.timeSeries?.[0]?.points?.[0]?.value;
-  if (!point) return 0;
-  return parseInt(point.int64Value || point.doubleValue || '0') || 0;
-}
-
-/* Supabase に実測キャッシュを保存（全ユーザーが参照できる） */
-function gcpCacheKey() {
-  const d = new Date();
-  return `maps_actual_cache_${d.getFullYear()}_${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-async function gcpSaveCache(count) {
-  await db.from('app_settings').upsert(
-    { key: gcpCacheKey(), value: JSON.stringify({ count, fetchedAt: Date.now() }), updated_at: new Date().toISOString() },
-    { onConflict: 'key' }
-  );
-}
-async function gcpLoadCache() {
-  try {
-    const { data } = await db.from('app_settings').select('value').eq('key', gcpCacheKey()).maybeSingle();
-    if (data?.value) return JSON.parse(data.value); // { count, fetchedAt }
-  } catch(e) {}
-  return null;
-}
-
-/* UI 表示を更新 */
+/* ── Google Maps API 使用量表示（自己計測ベース） ── */
 function updateMapsUsageDisplay() {
   const el = document.getElementById('maps-usage');
   if (!el) return;
 
-  const state = el.dataset.gcpState || 'unknown'; // 'live' | 'cached' | 'no_token' | 'unknown'
-  const gcpReqCount = el.dataset.gcpCount != null ? parseInt(el.dataset.gcpCount) : null; // API呼び出し回数
-  const cacheAge = el.dataset.gcpCacheAge ? parseInt(el.dataset.gcpCacheAge) : null; // 分
-
-  // 自己追跡の要素数（課金単位）を使ってパーセント計算
-  const selfElements = getMapsUsed(); // 要素数（origins×destinations）
+  const selfElements = getMapsUsed();
   const selfPct = Math.min(100, Math.round(selfElements / MAPS_FREE_LIMIT * 100));
   const selfColor = selfPct >= 90 ? '#c53030' : selfPct >= 70 ? '#e67e22' : '#1a6b40';
 
-  let usageHtml, btnHtml, alertHtml = '';
-
-  // 80%以上でアラートバナー表示
+  let alertHtml = '';
   if (selfPct >= 90) {
     alertHtml = `<div style="background:#fff5f5;border-left:4px solid #c53030;padding:6px 10px;font-size:12px;color:#c53030;margin-top:4px">
       🚨 <strong>Google Maps 無料枠 残り${100-selfPct}%</strong>（${getMapsRemaining().toLocaleString()}要素）— このままでは課金が発生します。今月は最適化の実行を控えてください。
@@ -2415,30 +2204,8 @@ function updateMapsUsageDisplay() {
     </div>`;
   }
 
-  if (gcpReqCount !== null) {
-    // Google Cloud Monitoring の実測値あり（APIコール回数）
-    const cacheLabel = state === 'cached' && cacheAge != null
-      ? `<span style="color:#94a3b8;font-size:10px">（${cacheAge < 60 ? cacheAge+'分前' : Math.round(cacheAge/60)+'時間前'}取得）</span>`
-      : '';
-    // 自己追跡の要素数を主表示、Cloud Monitoringのコール回数はサブ情報として表示
-    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
-      + ` <span style="color:#94a3b8;font-size:10px">APIコール ${gcpReqCount.toLocaleString()}回 ${cacheLabel}</span>`;
-    btnHtml = `<button onclick="gcpRefreshUsageDisplay()" style="font-size:10px;padding:2px 7px;background:#edf2fa;color:#1e3d6e;border:none;border-radius:4px;cursor:pointer;font-family:inherit" id="gcp-refresh-btn">🔄 更新</button>`;
-  } else if (state === 'no_token') {
-    // トークンなし → 自己追跡の要素数のみ表示
-    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
-      + ` <span style="color:#94a3b8;font-size:10px">（管理者ログインでAPI実測値を取得）</span>`;
-    btnHtml = `<button onclick="gcpStartOAuth()" style="font-size:10px;padding:2px 7px;background:#1e3d6e;color:white;border:none;border-radius:4px;cursor:pointer;font-family:inherit">🔑 管理者ログイン</button>`;
-  } else {
-    // 取得中 or 不明 → 自己追跡分は即時表示
-    usageHtml = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`
-      + ` <span style="color:#94a3b8;font-size:10px">⏳ API実測値取得中…</span>`;
-    btnHtml = '';
-  }
+  el.innerHTML = `Google Maps 今月: <span style="color:${selfColor};font-weight:700">${selfElements.toLocaleString()} 要素 / ${MAPS_FREE_LIMIT.toLocaleString()} 要素上限（${selfPct}%）</span>`;
 
-  el.innerHTML = `${usageHtml} ${btnHtml}`;
-
-  // アラートバナーを maps-usage の直後に挿入
   const alertEl = document.getElementById('maps-usage-alert');
   if (alertEl) alertEl.innerHTML = alertHtml;
   else if (alertHtml && el.parentNode) {
@@ -2449,128 +2216,9 @@ function updateMapsUsageDisplay() {
   }
 }
 
-/* 起動時: キャッシュ確認 → 古ければ自動フェッチ（管理者トークンを全員で共用） */
-async function gcpInitDisplay() {
-  const el = document.getElementById('maps-usage');
-  if (!el) return;
-
-  // まず「取得中」表示
-  el.dataset.gcpState = 'unknown';
-  updateMapsUsageDisplay();
-
-  // Supabase キャッシュを確認（全ユーザー共通）
-  const cache = await gcpLoadCache();
-  const CACHE_TTL = 4 * 60 * 60 * 1000; // 4時間
-  if (cache && (Date.now() - cache.fetchedAt) < CACHE_TTL) {
-    // 新鮮なキャッシュあり → 即表示
-    const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60000);
-    el.dataset.gcpState = 'cached';
-    el.dataset.gcpCount = String(cache.count);
-    el.dataset.gcpCacheAge = String(ageMin);
-    updateMapsUsageDisplay();
-    return;
-  }
-
-  // キャッシュ古い or なし → Supabase に管理者トークンがあれば自動フェッチ
-  const token = await gcpLoadToken();
-  if (!token) {
-    // トークン自体がない → 管理者ログインを促す
-    el.dataset.gcpState = 'no_token';
-    updateMapsUsageDisplay();
-    return;
-  }
-
-  // トークンあり → フェッチ試行
-  try {
-    const count = await gcpFetchMonthlyUsage();
-    if (count !== null) {
-      await gcpSaveCache(count); // Supabase にキャッシュ保存（他ユーザーも使える）
-      el.dataset.gcpState = 'live';
-      el.dataset.gcpCount = String(count);
-      el.dataset.gcpCacheAge = '0';
-      updateMapsUsageDisplay();
-    } else {
-      el.dataset.gcpState = 'no_token';
-      updateMapsUsageDisplay();
-    }
-  } catch(e) {
-    // フェッチ失敗 → 古いキャッシュがあればそれを表示
-    if (cache) {
-      const ageMin = Math.round((Date.now() - cache.fetchedAt) / 60000);
-      el.dataset.gcpState = 'cached';
-      el.dataset.gcpCount = String(cache.count);
-      el.dataset.gcpCacheAge = String(ageMin);
-    } else {
-      el.dataset.gcpState = 'no_token';
-    }
-    updateMapsUsageDisplay();
-  }
-}
-
-/* 「🔄 更新」ボタン処理 */
-async function gcpRefreshUsageDisplay() {
-  const btn = document.getElementById('gcp-refresh-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ 取得中…'; }
-  try {
-    const count = await gcpFetchMonthlyUsage();
-    const el = document.getElementById('maps-usage');
-    if (el) {
-      if (count === null) {
-        el.dataset.gcpState = 'no_token';
-        delete el.dataset.gcpCount;
-      } else {
-        await gcpSaveCache(count);
-        el.dataset.gcpState = 'live';
-        el.dataset.gcpCount = String(count);
-        el.dataset.gcpCacheAge = '0';
-      }
-    }
-  } catch(e) {
-    console.warn('Monitoring API 取得失敗:', e.message);
-    showToast('⚠️ Google からの取得に失敗しました: ' + e.message);
-  }
-  updateMapsUsageDisplay();
-}
-
-/* ページロード時に ?code= を処理 */
-async function gcpHandleRedirectCode() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get('code');
-  const stateParam = urlParams.get('state') || '';
-  // state が 'gcp_monitoring_oauth:VERIFIER' 形式かチェック
-  if (!code || !stateParam.startsWith('gcp_monitoring_oauth:')) return;
-
-  // verifier を state から取り出す
-  const verifier = stateParam.slice('gcp_monitoring_oauth:'.length);
-  history.replaceState({}, document.title, window.location.pathname);
-
-  // ポップアップ自身がトークン交換を完結させる（オリジン問わず確実）
-  try {
-    const tokenObj = await gcpExchangeCode(code, verifier);
-    await gcpSaveToken(tokenObj);
-    // BroadcastChannel で同一オリジンの親に完了を通知（最適化）
-    try {
-      const bc = new BroadcastChannel('gcp_oauth_channel');
-      bc.postMessage({ type: 'gcp_oauth_done' });
-      bc.close();
-    } catch(e) {}
-    // ポップアップを閉じる（親は pollClosed で検知して gcpInitDisplay を呼ぶ）
-    setTimeout(() => window.close(), 400);
-  } catch(e) {
-    console.error('OAuth コード交換失敗:', e);
-    // エラー時はポップアップに表示（閉じない）
-    document.body.innerHTML = `<div style="font-family:sans-serif;padding:40px;color:#c53030">
-      <h2>⚠️ Google 認証エラー</h2><p>${e.message}</p>
-      <button onclick="window.close()" style="margin-top:20px;padding:10px 20px;cursor:pointer">閉じる</button>
-    </div>`;
-  }
-}
 
 /* ── 初回起動 ── */
 (async () => {
-  // OAuth リダイレクトコードの処理（ログイン前でも実行）
-  await gcpHandleRedirectCode();
-
   const { data: { session } } = await db.auth.getSession();
   if (session) {
     document.getElementById('login-screen').style.display = 'none';
