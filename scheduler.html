@@ -517,17 +517,26 @@ async function loadPatients() {
   showLastImportDate();
 }
 
-/* 最後に新規追加された患者の created_at を「最終一括読込」の目安として表示 */
-function showLastImportDate() {
+/* app_settings に記録された「一括インポート」実施日時を表示 */
+async function showLastImportDate() {
   const el = document.getElementById('last-import-text');
-  if (!el || !patients.length) return;
-  const latest = patients.reduce((max, p) =>
-    (p.created_at && p.created_at > max) ? p.created_at : max, '');
-  if (!latest) return;
-  const d = new Date(latest);
+  if (!el) return;
+  const { data, error } = await db.from('app_settings').select('value').eq('key', 'scheduler_bulk_import_at').maybeSingle();
+  if (error || !data?.value) return;
+  const d = new Date(data.value);
   const label = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
-  el.textContent = `最終取込: ${label}`;
-  el.title = `最後に新規追加された患者データの登録日時（${d.toLocaleString('ja-JP')}）`;
+  el.textContent = `一括インポート: ${label}`;
+  el.title = `最後に一括インポートを実施した日時（${d.toLocaleString('ja-JP')}）`;
+}
+
+/* 一括インポートを実施した際に呼び出し、記録を更新する */
+async function recordBulkImport() {
+  const now = new Date().toISOString();
+  await db.from('app_settings').upsert(
+    { key: 'scheduler_bulk_import_at', value: now, updated_at: now },
+    { onConflict: 'key' }
+  );
+  showLastImportDate();
 }
 
 /* ── ユーティリティ ── */
