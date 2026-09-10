@@ -276,7 +276,10 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
         </div>
         <div class="cond-item">
           <label>訪問日</label>
-          <input type="date" id="visit-date" onchange="loadRouteFromSupabase()">
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="date" id="visit-date" onchange="loadRouteFromSupabase();updateVisitDayLabel()">
+            <span id="visit-day-label" style="font-size:14px;font-weight:700;color:#1e3d6e"></span>
+          </div>
         </div>
         <div class="cond-item">
           <label>最初の到着 希望</label>
@@ -495,6 +498,7 @@ async function init() {
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
   document.getElementById('visit-date').value = `${yyyy}-${mm}-${dd}`;
+  updateVisitDayLabel();
 
   cleanOldOverrides();
   await loadPatients();
@@ -561,6 +565,14 @@ function matchPatient(p, q) {
 function getDayName(dateStr) {
   const d = new Date(dateStr);
   return DAY_NAMES[d.getDay()];
+}
+
+/* 訪問日入力欄の横に「（月）」等の曜日を表示 */
+function updateVisitDayLabel() {
+  const el = document.getElementById('visit-day-label');
+  const dateStr = document.getElementById('visit-date').value;
+  if (!el) return;
+  el.textContent = dateStr ? `（${getDayName(dateStr)}）` : '';
 }
 
 /* 推奨診察時間を取得（優先順：DBのvisit_duration_min → memo_parsedのnotes → デフォルト25分） */
