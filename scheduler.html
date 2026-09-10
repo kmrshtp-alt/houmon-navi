@@ -2060,6 +2060,21 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
 
   // 警告（各行の詳細は行内に表示済み。サマリはカウントのみ）
   let warnings = '';
+
+  // 帰着希望を大幅に超える場合は「達成不可能」を最優先・最上部に明示
+  // （全順列/十分な探索を尽くした上での結果＝これが実現可能な最速案であることも伝える）
+  const LATE_INFEASIBLE_THRESHOLD = 30; // 分
+  if (result.lateMin >= LATE_INFEASIBLE_THRESHOLD) {
+    const hh = Math.floor(result.lateMin / 60), mm = result.lateMin % 60;
+    const lateLabel = hh > 0 ? `${hh}時間${mm}分` : `${mm}分`;
+    warnings += `<div class="warning-box" style="border-color:#c53030;background:#fff5f5;color:#c53030;font-weight:700;font-size:14px">
+      🚫 帰着希望（${minToTime(cfg.returnTarget)}）はこの患者構成では達成できません。<br>
+      <span style="font-weight:400;font-size:12.5px">全パターンを検討した上で、これが実現可能な最速の案です（実際の帰着予想: ${minToTime(result.returnTime)}／${lateLabel}オーバー）。訪問人数を減らすか、他の日への振替をご検討ください。</span>
+    </div>`;
+  } else if (result.lateMin > 0) {
+    warnings += `<div class="warning-box">⚠️ 帰着が ${result.lateMin} 分遅れる予定です（${minToTime(result.returnTime)}）。</div>`;
+  }
+
   const ngCount  = result.visits.filter(v => v.type === 'patient' && violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'ng')).length;
   const warnCount = result.visits.filter(v => v.type === 'patient' && !violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'ng') && violationDetails(v.patient, v.arrival, dayName, !!v.warning).some(m => m.level === 'warn')).length;
   if (ngCount > 0) {
@@ -2067,9 +2082,6 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
   }
   if (warnCount > 0) {
     warnings += `<div class="warning-box">⚠️ ${warnCount}人の希望（時間帯・曜日）が完全には反映できていません。</div>`;
-  }
-  if (result.lateMin > 0) {
-    warnings += `<div class="warning-box">⚠️ 帰着が ${result.lateMin} 分遅れる予定です（${minToTime(result.returnTime)}）。</div>`;
   }
   if (cfg.lunchEnabled && !result.lunchTaken) {
     warnings += `<div class="warning-box">⚠️ 11〜14時の間にここはるへ戻れるタイミングがないため、昼休憩を自動挿入できませんでした。スケジュールを確認のうえ手動で調整してください。</div>`;
