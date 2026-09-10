@@ -1400,10 +1400,22 @@ function swapImprove(initOrder, matrix, items, feasWins, annotations, cfg) {
 
 /* スコア計算（小さいほど良い）
  *  ① 制約違反 >> ② 帰着遅れ >> ③ 出発遅れ >> ④ 走行時間 */
+/* 午前・午後の訪問人数の偏りを計算（0=均等、大きいほど偏り大） */
+function amPmBalancePenalty(r) {
+  const patientVisits = r.visits.filter(v => v.type === 'patient');
+  if (!patientVisits.length) return 0;
+  // 昼休憩を取っていればその開始時刻、取っていなければ12:30を午前/午後の境目とする
+  const splitPoint = (r.lunchTaken && r.lunchStart != null) ? r.lunchStart : (12 * 60 + 30);
+  const amCount = patientVisits.filter(v => v.arrival < splitPoint).length;
+  const pmCount = patientVisits.length - amCount;
+  return Math.abs(amCount - pmCount);
+}
+
 function schedScore(r) {
   return r.infeasibleCount * 100000
        + r.lateMin        * 1000
        + r.startDelay     * 10
+       + amPmBalancePenalty(r) * 15
        + r.totalTravel;
 }
 
@@ -1557,8 +1569,8 @@ function simulateSchedule(order, matrix, items, feasWins, annotations, cfg) {
     const tScore = lunchTimingScore(res.lunchStart, cfg.lunchDuration);
     if (tScore === Infinity) continue;  // 11〜14時の範囲外 → スキップ
 
-    // 複合スコア：制約違反 >> 帰着遅れ >> 総移動時間 >> 昼のタイミング（軽微）
-    const score = res.infeasibleCount * 100000 + res.lateMin * 1000 + res.totalTravel + tScore * 0.1;
+    // 複合スコア：制約違反 >> 帰着遅れ >> 午前午後バランス >> 総移動時間 >> 昼のタイミング（軽微）
+    const score = res.infeasibleCount * 100000 + res.lateMin * 1000 + amPmBalancePenalty(res) * 15 + res.totalTravel + tScore * 0.1;
     if (score < bestScore) { bestScore = score; bestResult = res; }
   }
 
