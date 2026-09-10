@@ -225,6 +225,13 @@ main { flex: 1; overflow: hidden; display: flex; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.raddr:has(.addr-toggle) { white-space: normal; overflow: visible; }
+.addr-toggle { display: flex; gap: 6px; margin-top: 6px; }
+.addr-chip {
+  font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid #e2e8f0;
+  background: #f8fafc; color: #64748b; cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.addr-chip.active { background: #1e3d6e; color: #fff; border-color: #1e3d6e; }
 
 /* Suggest dropdown */
 .suggest-list {
@@ -1118,20 +1125,42 @@ function highlightSuggest(items, idx) {
   items.forEach((el, i) => el.classList.toggle('active', i === idx));
 }
 
+// 患者ごとの住所切替状態（ページ再読み込みでリセット、常に自宅がデフォルト）
+const addrToggleState = {};
+function getActiveAddress(p) {
+  if (!p) return '';
+  if (p.address2 && addrToggleState[p.id] === 'secondary') return p.address2;
+  return p.address;
+}
+function addrToggleHTML(p, slot) {
+  if (!p || !p.address2) return '';
+  const active = addrToggleState[p.id] === 'secondary' ? 'secondary' : 'primary';
+  return `<div class="addr-toggle">
+    <button class="addr-chip ${active==='primary'?'active':''}" onclick="toggleAddr('${slot}','${p.id}','primary')">🏠 自宅</button>
+    <button class="addr-chip ${active==='secondary'?'active':''}" onclick="toggleAddr('${slot}','${p.id}','secondary')">🏥 ${esc(p.address2_label||'一時滞在先')}</button>
+  </div>`;
+}
+function toggleAddr(slot, id, which) {
+  addrToggleState[id] = which;
+  if (slot === 'from' && fromPatient && fromPatient.id === id) selectPatient('from', fromPatient);
+  else if (slot === 'to' && toPatient && toPatient.id === id) selectPatient('to', toPatient);
+  else if (slot === 'today') renderTodayList();
+}
+
 function selectPatient(slot, p) {
   if (slot === 'from') {
     fromPatient = p;
     const el = document.getElementById('from-input');
     el.value = p.name;
     el.classList.remove('selected-to'); el.classList.add('selected-from');
-    document.getElementById('from-addr').textContent = p.address;
+    document.getElementById('from-addr').innerHTML = `${esc(getActiveAddress(p))}${addrToggleHTML(p, 'from')}`;
     document.getElementById('from-clear').classList.add('visible');
   } else {
     toPatient = p;
     const el = document.getElementById('to-input');
     el.value = p.name;
     el.classList.remove('selected-from'); el.classList.add('selected-to');
-    document.getElementById('to-addr').textContent = p.address;
+    document.getElementById('to-addr').innerHTML = `${esc(getActiveAddress(p))}${addrToggleHTML(p, 'to')}`;
     document.getElementById('to-clear').classList.add('visible');
   }
   document.getElementById(`${slot}-suggest`).style.display = 'none';
@@ -1166,8 +1195,8 @@ function updateNavBtn() {
 }
 
 function openMaps() {
-  const fromAddr = fromPatient ? fromPatient.address : document.getElementById('from-input').value.trim();
-  const toAddr   = toPatient   ? toPatient.address   : document.getElementById('to-input').value.trim();
+  const fromAddr = fromPatient ? getActiveAddress(fromPatient) : document.getElementById('from-input').value.trim();
+  const toAddr   = toPatient   ? getActiveAddress(toPatient)   : document.getElementById('to-input').value.trim();
   const isCurrentLoc = fromPatient && fromPatient.id === '__current__';
   if ((!isCurrentLoc && !fromAddr) || !toAddr) return;
   const d = encodeURIComponent(toAddr);
@@ -1192,7 +1221,7 @@ function renderList() {
     (a.furigana || a.name).localeCompare(b.furigana || b.name, 'ja'));
   list.innerHTML = sorted.map(p => `
     <div class="tbl-row">
-      <div class="tbl-name">${esc(p.name)}<div style="font-size:11px;color:#94a3b8">${esc(p.furigana||'')}</div></div>
+      <div class="tbl-name">${esc(p.name)}${p.address2 ? ' <span style="font-size:10px;color:#1e3d6e;background:#edf2fa;border-radius:4px;padding:1px 5px">2住所</span>' : ''}<div style="font-size:11px;color:#94a3b8">${esc(p.furigana||'')}</div></div>
       <div class="tbl-addr">${esc(p.address)}</div>
       <div style="display:flex;gap:4px;justify-content:flex-end">
         <button class="edit-btn" data-id="${p.id}">編集</button>
@@ -1250,6 +1279,13 @@ function showEditModal(id) {
       <div><span class="modal-label">ふりがな（名）</span><input id="e-fmei" style="${inp}" value="${esc(furiMei||'')}"></div>
     </div>
     <div class="modal-full"><span class="modal-label">住所</span><input id="e-addr" style="${inp}" value="${esc(p.address)}"></div>
+    <div class="modal-full" id="e-addr2-block" style="${p.address2 ? '' : 'display:none'}">
+      <span class="modal-label">一時滞在先（任意）</span>
+      <input id="e-addr2-label" style="${inp};margin-bottom:6px" placeholder="例：ショートステイ先、入院先" value="${esc(p.address2_label||'')}">
+      <input id="e-addr2" style="${inp}" placeholder="一時滞在先の住所" value="${esc(p.address2||'')}">
+    </div>
+    <button type="button" id="e-addr2-toggle" style="${p.address2 ? 'display:none' : ''};background:none;border:none;color:#1e3d6e;font-size:13px;cursor:pointer;padding:4px 0;text-align:left"
+      onclick="document.getElementById('e-addr2-block').style.display='block';this.style.display='none'">＋ 一時滞在先を追加</button>
     <div class="modal-actions">
       <button class="modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">キャンセル</button>
       <button class="modal-save" onclick="saveEdit('${id}')">保存する</button>
@@ -1263,11 +1299,17 @@ async function saveEdit(id) {
   const fsei = document.getElementById('e-fsei').value.trim();
   const fmei = document.getElementById('e-fmei').value.trim();
   const addr = document.getElementById('e-addr').value.trim();
+  const addr2 = document.getElementById('e-addr2') ? document.getElementById('e-addr2').value.trim() : '';
+  const addr2Label = document.getElementById('e-addr2-label') ? document.getElementById('e-addr2-label').value.trim() : '';
   if (!sei || !addr) { alert('姓と住所は必須です'); return; }
   const name     = mei ? `${sei} ${mei}` : sei;
   const furigana = [fsei, fmei].filter(Boolean).join(' ');
   document.getElementById('modal-overlay').style.display = 'none';
-  await db.from('patients').update({ name, furigana, address: addr, lat: null, lng: null }).eq('id', id);
+  await db.from('patients').update({
+    name, furigana, address: addr, lat: null, lng: null,
+    address2: addr2 || null,
+    address2_label: addr2 ? (addr2Label || '一時滞在先') : null,
+  }).eq('id', id);
   await load();
 }
 
@@ -1574,7 +1616,7 @@ function renderTodayList() {
       <div class="visit-num ${isClinicColor ? 'clinic' : ''}">${i + 1}</div>
       <div class="visit-info">
         <div class="visit-name">${esc(p.name)}</div>
-        <div class="visit-addr">${esc(p.address)}</div>
+        <div class="visit-addr">${esc(getActiveAddress(p))}${addrToggleHTML(p, 'today')}</div>
       </div>
       ${isFixed ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
     </div>`;
@@ -1620,9 +1662,9 @@ function openFullRoute(segment) {
   if (fullList.length < 2) return;
 
   function buildMapsUrl(stops) {
-    const origin      = encodeURIComponent(stops[0].address);
-    const destination = encodeURIComponent(stops[stops.length - 1].address);
-    const waypoints   = stops.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
+    const origin      = encodeURIComponent(getActiveAddress(stops[0]));
+    const destination = encodeURIComponent(getActiveAddress(stops[stops.length - 1]));
+    const waypoints   = stops.slice(1, -1).map(p => encodeURIComponent(getActiveAddress(p))).join('|');
     let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
     if (waypoints) url += `&waypoints=${waypoints}`;
     return url;

@@ -76,6 +76,9 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .visit-info{min-width:0}
 .visit-name{font-weight:700;font-size:14px;color:#1e293b}
 .visit-cond{font-size:11px;color:#64748b;margin-top:2px;line-height:1.4}
+.addr-toggle{display:flex;gap:6px;margin-top:6px}
+.addr-chip{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;font-family:inherit;white-space:nowrap}
+.addr-chip.active{background:#1e3d6e;color:#fff;border-color:#1e3d6e}
 .visit-cond .fixed{color:#92400e;font-weight:700}
 .visit-cond .ng{color:#c53030}
 .dur-input{width:100%;padding:6px 8px;font-size:13px;border:1.5px solid #e2e8f0;border-radius:6px;outline:none;text-align:center;background:#f8fafc;font-family:inherit}
@@ -367,6 +370,26 @@ const DAY_NAMES = ['日','月','火','水','木','金','土'];
 let patients = [];          // scheduler_patients 全件
 let todayList = [];         // 今日の訪問対象（{patient, duration}）
 let distanceCache = null;   // 直近の距離行列
+
+// 患者ごとの住所切替状態（ページ再読み込みでリセット、常に自宅がデフォルト）
+const addrToggleState = {};
+function getActiveAddress(p) {
+  if (!p) return '';
+  if (p.address2 && addrToggleState[p.external_id] === 'secondary') return p.address2;
+  return p.address;
+}
+function addrToggleHTML(p) {
+  if (!p || !p.address2) return '';
+  const active = addrToggleState[p.external_id] === 'secondary' ? 'secondary' : 'primary';
+  return `<div class="addr-toggle" onclick="event.stopPropagation()">
+    <button class="addr-chip ${active==='primary'?'active':''}" onclick="toggleAddr('${p.external_id}','primary')">🏠 自宅</button>
+    <button class="addr-chip ${active==='secondary'?'active':''}" onclick="toggleAddr('${p.external_id}','secondary')">🏥 ${esc(p.address2_label||'一時滞在先')}</button>
+  </div>`;
+}
+function toggleAddr(externalId, which) {
+  addrToggleState[externalId] = which;
+  renderTodayList();
+}
 let overrideEditing = new Set(); // 編集中のoverride（external_id）
 let lastResult = null;      // 最後の最適化結果
 let currentDoctor = '';     // 選択中の担当医
@@ -736,6 +759,7 @@ function renderTodayList() {
         <div class="visit-info" style="flex:1;min-width:0">
           <div class="visit-name">${esc(t.patient.name)} <span style="font-size:11px;color:#64748b;font-weight:400">${esc(t.patient.doctor || '')}</span></div>
           <div class="visit-cond">${condHTML}</div>
+          ${addrToggleHTML(t.patient)}
         </div>
         <span style="font-size:16px;color:#94a3b8;flex-shrink:0">›</span>
       </div>
@@ -1109,7 +1133,7 @@ async function optimize() {
     const returnClinic = true;  // 必ずここはるへ戻る
 
     // 距離行列取得（CLINIC を index 0、残りを 1..N）
-    const locations = [CLINIC, ...todayList.map(t => t.patient)];
+    const locations = [CLINIC, ...todayList.map(t => ({...t.patient, address: getActiveAddress(t.patient)}))];
     const matrix = await fetchDistanceMatrix(locations);
     distanceCache = matrix;
 
@@ -1576,6 +1600,20 @@ function openEditor(patient) {
       </div>
     </div>
 
+    <!-- 住所 -->
+    <div class="editor-sec">
+      <div class="editor-sec-title">住所</div>
+      <div class="edit-row">
+        <div class="edit-label">自宅住所</div>
+        <input class="edit-input-text" type="text" id="ef-address" value="${esc(patient.address||'')}" style="width:320px">
+      </div>
+      <div class="edit-row">
+        <div class="edit-label">一時滞在先</div>
+        <input class="edit-input-text" type="text" id="ef-address2-label" placeholder="例：ショートステイ先" value="${esc(patient.address2_label||'')}" style="width:150px">
+        <input class="edit-input-text" type="text" id="ef-address2" placeholder="住所（任意）" value="${esc(patient.address2||'')}" style="width:220px">
+      </div>
+    </div>
+
     <!-- 基本設定 -->
     <div class="editor-sec">
       <div class="editor-sec-title">スケジュール制約</div>
@@ -1771,15 +1809,32 @@ async function saveEditor() {
     };
     if (!newParsed.needs_review) delete newParsed.needs_review;
 
+    const address = document.getElementById('ef-address').value.trim();
+    const address2 = document.getElementById('ef-address2').value.trim();
+    const address2Label = document.getElementById('ef-address2-label').value.trim();
+
     const { error } = await db.from('scheduler_patients')
-      .update({ memo_parsed: newParsed })
+      .update({
+        memo_parsed: newParsed,
+        address: address || null,
+        address2: address2 || null,
+        address2_label: address2 ? (address2Label || '一時滞在先') : null,
+      })
       .eq('external_id', editorPatient.external_id);
     if (error) throw error;
 
     // ローカルキャッシュを更新
     const idx = patients.findIndex(p => p.external_id === editorPatient.external_id);
-    if (idx >= 0) patients[idx].memo_parsed = newParsed;
+    if (idx >= 0) {
+      patients[idx].memo_parsed = newParsed;
+      patients[idx].address = address || null;
+      patients[idx].address2 = address2 || null;
+      patients[idx].address2_label = address2 ? (address2Label || '一時滞在先') : null;
+    }
     editorPatient.memo_parsed = newParsed;
+    editorPatient.address = address || null;
+    editorPatient.address2 = address2 || null;
+    editorPatient.address2_label = address2 ? (address2Label || '一時滞在先') : null;
     renderTodayList();
     closeEditor();
 
@@ -1979,9 +2034,9 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
   const fullList = [CLINIC, ...orderedPatients];
   if (cfg.returnClinic) fullList.push(CLINIC);
   if (fullList.length >= 2) {
-    const origin = encodeURIComponent(fullList[0].address);
-    const destination = encodeURIComponent(fullList[fullList.length - 1].address);
-    const waypoints = fullList.slice(1, -1).map(p => encodeURIComponent(p.address)).join('|');
+    const origin = encodeURIComponent(getActiveAddress(fullList[0]) || fullList[0].address);
+    const destination = encodeURIComponent(getActiveAddress(fullList[fullList.length - 1]) || fullList[fullList.length - 1].address);
+    const waypoints = fullList.slice(1, -1).map(p => encodeURIComponent(getActiveAddress(p) || p.address)).join('|');
     let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
     if (waypoints) url += `&waypoints=${waypoints}`;
     document.getElementById('gmap-btn').href = url;
@@ -2095,7 +2150,7 @@ async function loadRouteFromSupabase() {
     if (data.result_json) {
       lastResult = data.result_json;
       const overrides = loadOverrides();
-      const locations = [CLINIC, ...todayList.map(t => t.patient)];
+      const locations = [CLINIC, ...todayList.map(t => ({...t.patient, address: getActiveAddress(t.patient)}))];
       renderResult(lastResult, locations, visitDate, getDayName(visitDate), overrides);
       document.getElementById('result-card').style.display = '';
     }
@@ -2151,7 +2206,7 @@ async function cancelPatientFromResult(externalId) {
   btn.textContent = '再計算中…';
 
   try {
-    const locations = [CLINIC, ...todayList.map(t => t.patient)];
+    const locations = [CLINIC, ...todayList.map(t => ({...t.patient, address: getActiveAddress(t.patient)}))];
     const matrix = await fetchDistanceMatrix(locations);
     distanceCache = matrix;
 
