@@ -2142,6 +2142,15 @@ async function saveRouteToSupabase() {
 
 /* ── Supabaseからルートを読み込み ── */
 async function loadRouteFromSupabase() {
+  // 日付・担当医を切り替えた瞬間に、古い結果や訪問リストを画面から消す
+  todayList.length = 0;
+  lastResult = null;
+  distanceCache = null;
+  document.getElementById('result-card').style.display = 'none';
+  renderTodayList();
+  const elClear = document.getElementById('save-status');
+  if (elClear) elClear.textContent = '';
+
   if (!currentDoctor) return;
   const visitDate = document.getElementById('visit-date').value;
   if (!visitDate) return;
