@@ -257,6 +257,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 <header>
   <div class="brand">🚗 訪問スケジューラ <span style="font-size:10px;font-weight:400;color:#94a3b8;margin-left:4px">v1.1.5</span> <a href="index.html">▶ 訪問診療ナビへ</a></div>
   <div class="status"><div class="status-dot" id="status-dot"></div><span id="status-text">読込中…</span></div>
+  <span id="last-import-text" style="font-size:11px;color:#94a3b8;margin-left:8px"></span>
   <span id="save-status" style="font-size:11px;color:#94a3b8"></span>
 </header>
 
@@ -513,6 +514,20 @@ async function loadPatients() {
   }
   patients = data || [];
   setStatus('ok', `${patients.length}人 読込済み`);
+  showLastImportDate();
+}
+
+/* 最後に新規追加された患者の created_at を「最終一括読込」の目安として表示 */
+function showLastImportDate() {
+  const el = document.getElementById('last-import-text');
+  if (!el || !patients.length) return;
+  const latest = patients.reduce((max, p) =>
+    (p.created_at && p.created_at > max) ? p.created_at : max, '');
+  if (!latest) return;
+  const d = new Date(latest);
+  const label = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  el.textContent = `最終取込: ${label}`;
+  el.title = `最後に新規追加された患者データの登録日時（${d.toLocaleString('ja-JP')}）`;
 }
 
 /* ── ユーティリティ ── */
