@@ -846,6 +846,15 @@ function patientFeasibleWindows(patient, dayName, todayOverride) {
     windows = subtractWindow(windows, s, e);
   }
 
+  // ソフトルール（例：デイサービス中抜け可）で NG枠を部分的に復元
+  // 「通常はNGだが、この患者は診察のために中抜け対応してくれる」という個別の例外
+  const softs = (mp.soft_windows || []).filter(w => w.day === dayName || w.day === '全');
+  for (const soft of softs) {
+    const s = timeToMin(soft.start);
+    const e = timeToMin(soft.end);
+    windows = addWindow(windows, s, e);
+  }
+
   // OK windows がある場合は積集合
   const oks = (mp.ok_windows || []).filter(w => w.day === dayName || w.day === '全');
   if (oks.length) {
@@ -880,6 +889,20 @@ function subtractWindow(windows, s, e) {
     if (e <= ws || s >= we) { out.push([ws, we]); continue; }
     if (s > ws) out.push([ws, s]);
     if (e < we) out.push([e, we]);
+  }
+  return out;
+}
+
+/* [s,e] を windows に和集合として追加し、重なりをマージして返す（ソフトルールでNG枠を部分的に復元するため） */
+function addWindow(windows, s, e) {
+  const merged = [...windows, [s, e]].sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const [ws, we] of merged) {
+    if (out.length && ws <= out[out.length - 1][1]) {
+      out[out.length - 1][1] = Math.max(out[out.length - 1][1], we);
+    } else {
+      out.push([ws, we]);
+    }
   }
   return out;
 }
@@ -1723,6 +1746,17 @@ function openEditor(patient) {
       <button class="win-add-btn" onclick="addWinRow('ok-list')">＋ OK時間帯を追加</button>
     </div>
 
+    <!-- ソフトルール（例外対応） -->
+    <div class="editor-sec" style="background:#eef2ff;border-radius:10px;padding:10px 12px">
+      <div class="editor-sec-title" style="color:#4338ca">🔓 ソフトルール（本来NGだが個別に中抜け等で対応可）</div>
+      <div style="font-size:11.5px;color:#4338ca;margin-bottom:8px">
+        例：通常デイサービスでNGの時間でも、この患者はいつも診察のため中抜けしてくれる、等。<br>
+        ここに登録した時間はNG枠より優先され、実際にこの時間で組まれた場合はスケジュール画面に🔓マークで通知されます。
+      </div>
+      <div class="windows-list" id="soft-list">${winsHTML('soft', mp.soft_windows)}</div>
+      <button class="win-add-btn" onclick="addWinRow('soft-list')">＋ ソフトルールを追加</button>
+    </div>
+
     <!-- メモ -->
     <div class="editor-sec">
       <div class="editor-sec-title">メモ・備考</div>
@@ -1852,6 +1886,7 @@ async function saveEditor() {
       week_pattern:   document.getElementById('ef-week-pattern').value.trim() || null,
       ng_windows:     collectWins('ng-list').sort((a,b) => a.start.localeCompare(b.start)),
       ok_windows:     collectWins('ok-list').sort((a,b) => a.start.localeCompare(b.start)),
+      soft_windows:   collectWins('soft-list').sort((a,b) => a.start.localeCompare(b.start)),
       notes:          document.getElementById('ef-notes').value.trim(),
       needs_review:   document.getElementById('ef-needs-review').checked || undefined
     };
@@ -1968,6 +2003,25 @@ function violationDetails(patient, arrival, dayName, hasWarning) {
   return msgs;
 }
 
+/* この訪問時刻が「ソフトルール（例：デイサービス中抜け可）」に頼って成立しているか判定し、
+ * 頼っている場合はその理由を返す（本来はNGの時間帯を個別の例外で通している、という事実を必ず通知するため） */
+function softRuleNotes(patient, arrival, dayName) {
+  const mp = patient.memo_parsed || {};
+  const softs = (mp.soft_windows || []).filter(w => w.day === dayName || w.day === '全');
+  if (!softs.length) return [];
+  const ngs = (mp.ng_windows || []).filter(w => w.day === dayName || w.day === '全');
+  const notes = [];
+  for (const soft of softs) {
+    const s = timeToMin(soft.start), e = timeToMin(soft.end);
+    if (arrival < s || arrival >= e) continue;
+    const overlapsNg = ngs.some(ng => arrival >= timeToMin(ng.start) && arrival < timeToMin(ng.end));
+    if (overlapsNg) {
+      notes.push(soft.reason ? `${soft.reason}のため対応可能` : '本来はNGの時間帯ですが例外対応で成立しています');
+    }
+  }
+  return notes;
+}
+
 /* ── 結果描画 ── */
 function renderResult(result, locations, dateStr, dayName, overrides = {}) {
   const card = document.getElementById('result-card');
@@ -2012,12 +2066,15 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
         ? `<span style="color:#b45309;font-weight:700">🕐 今日: ${ov.from}〜${ov.to}</span><span style="color:#94a3b8;font-size:10px;margin-left:4px">（通常制約を無視）</span>`
         : condSummary(v.patient.memo_parsed);
       const violations = ov ? [] : violationDetails(v.patient, v.arrival, dayName, !!v.warning);
+      const softNotes = ov ? [] : softRuleNotes(v.patient, v.arrival, dayName);
       const hasNG   = violations.some(m => m.level === 'ng');
       const hasWarn = violations.some(m => m.level === 'warn');
-      const badgeIcon = hasNG ? '❌' : hasWarn ? '⚠️' : '';
+      const badgeIcon = hasNG ? '❌' : hasWarn ? '⚠️' : softNotes.length ? '🔓' : '';
       const rowClass = hasNG ? 'result-row row-ng' : hasWarn ? 'result-row row-warn' : 'result-row';
       const detailHtml = violations.map(m =>
         `<div class="r-violation ${m.level === 'ng' ? 'r-viol-ng' : 'r-viol-warn'}">${m.level === 'ng' ? '❌' : '⚠️'} ${esc(m.text)}</div>`
+      ).join('') + softNotes.map(text =>
+        `<div class="r-violation" style="background:#eef2ff;color:#4338ca">🔓 例外対応で成立: ${esc(text)}</div>`
       ).join('');
       rows.push(`<div class="${rowClass}">
         <div class="r-time">${minToTime(v.arrival)}</div>
@@ -2082,6 +2139,10 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
   }
   if (warnCount > 0) {
     warnings += `<div class="warning-box">⚠️ ${warnCount}人の希望（時間帯・曜日）が完全には反映できていません。</div>`;
+  }
+  const softCount = result.visits.filter(v => v.type === 'patient' && !overrides[v.patient.external_id] && softRuleNotes(v.patient, v.arrival, dayName).length).length;
+  if (softCount > 0) {
+    warnings += `<div class="warning-box" style="border-color:#4338ca;background:#eef2ff;color:#4338ca">🔓 ${softCount}人、本来NGの時間帯ですが個別の例外対応（中抜け等）で成立しているスケジュールが含まれます。各行の詳細を確認してください。</div>`;
   }
   if (cfg.lunchEnabled && !result.lunchTaken) {
     warnings += `<div class="warning-box">⚠️ 11〜14時の間にここはるへ戻れるタイミングがないため、昼休憩を自動挿入できませんでした。スケジュールを確認のうえ手動で調整してください。</div>`;
