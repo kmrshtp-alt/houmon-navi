@@ -398,6 +398,7 @@ let overrideEditing = new Set(); // 編集中のoverride（external_id）
 let lastResult = null;      // 最後の最適化結果
 let currentDoctor = '';     // 選択中の担当医
 let autoSaveTimer = null;   // 自動保存タイマー
+let durationSaveTimers = {}; // 患者ごとの診察時間デフォルト保存タイマー
 
 /* ── 今日だけ制約 localStorage 管理 ── */
 function todayOverrideKey() {
@@ -743,8 +744,23 @@ function removePatient(idx) {
 function updateDuration(idx, val) {
   const n = parseInt(val);
   if (isNaN(n) || n < 5 || n > 180) return;
-  todayList[idx].duration = n;
+  const item = todayList[idx];
+  item.duration = n;
+  item.patient.visit_duration_min = n; // 次回以降の推奨時間としてもその場で反映
   scheduleAutoSave();
+  scheduleDurationDefaultSave(item.patient.external_id, n);
+}
+
+/* 患者ごとの診察時間デフォルトをscheduler_patientsに保存（次回以降の初期値として使う） */
+function scheduleDurationDefaultSave(externalId, n) {
+  clearTimeout(durationSaveTimers[externalId]);
+  durationSaveTimers[externalId] = setTimeout(async () => {
+    try {
+      await db.from('scheduler_patients').update({ visit_duration_min: n }).eq('external_id', externalId);
+    } catch (e) {
+      console.warn('診察時間デフォルト保存失敗:', e.message);
+    }
+  }, 800);
 }
 
 function renderTodayList() {
