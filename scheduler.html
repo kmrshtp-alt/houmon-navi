@@ -195,6 +195,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .r-stat.travel{background:#edf2fa;color:#1e3d6e}
 .r-stat.consult{background:#dcfce7;color:#1a6b40}
 .r-warn{color:#c53030;font-size:11px;font-weight:700;margin-left:6px}
+.r-realtime{color:#64748b;font-size:11px;font-weight:700;margin-left:5px}
 
 .summary-row{display:flex;gap:14px;flex-wrap:wrap;padding:12px 16px;background:#edf2fa;border-radius:10px;margin-top:14px;font-size:13px;color:#1e3d6e;font-weight:700}
 .warning-box{background:#fef9c3;border-left:4px solid #ca8a04;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#854d0e}
@@ -1094,21 +1095,34 @@ async function fetchDistanceMatrix(locations) {
   const addresses = locations.map(l => l.address);
   const n = addresses.length;
 
-  // ── 1. キャッシュ読み込み ──
+  // 同一住所（同じ施設に複数患者がいる場合）を束ねる：
+  // addresses.indexOf() は最初に一致した1件しか返さないため、
+  // 2人目以降の患者への移動時間が書き込まれず 0 分のまま残るバグを防ぐ
+  const addrToIndices = new Map();
+  addresses.forEach((addr, idx) => {
+    if (!addrToIndices.has(addr)) addrToIndices.set(addr, []);
+    addrToIndices.get(addr).push(idx);
+  });
+
+  // ── 1. キャッシュ読み込み（住所の組み合わせはユニーク化してAPI/キャッシュ照会） ──
+  const uniqueAddrs = [...addrToIndices.keys()];
   const allPairs = [];
-  for (let i = 0; i < n; i++)
-    for (let j = 0; j < n; j++)
-      if (i !== j) allPairs.push({ origin: addresses[i], destination: addresses[j] });
+  for (const origin of uniqueAddrs)
+    for (const destination of uniqueAddrs)
+      if (origin !== destination) allPairs.push({ origin, destination });
 
   const cached = await loadDistanceCache(allPairs);
 
-  // ── 2. 行列をキャッシュで初期化 ──
+  // ── 2. 行列をキャッシュで初期化（同一住所の全インデックスに反映） ──
   const matrix = Array.from({ length: n }, () => Array(n).fill(0));
+  const applyToMatrix = (origin, destination, mins) => {
+    for (const i of addrToIndices.get(origin))
+      for (const j of addrToIndices.get(destination))
+        if (i !== j) matrix[i][j] = mins;
+  };
   for (const { origin, destination } of allPairs) {
     const key = origin + '\x00' + destination;
-    if (cached.has(key)) {
-      matrix[addresses.indexOf(origin)][addresses.indexOf(destination)] = cached.get(key);
-    }
+    if (cached.has(key)) applyToMatrix(origin, destination, cached.get(key));
   }
 
   // ── 3. 全キャッシュヒットならAPIコールなし ──
@@ -1171,14 +1185,12 @@ async function fetchDistanceMatrix(locations) {
 
       for (let oi = 0; oi < apiOrigins.length; oi++) {
         const origAddr = apiOrigins[oi];
-        const i = addresses.indexOf(origAddr);
         for (let di = 0; di < apiDests.length; di++) {
           const destAddr = apiDests[di];
-          const j = addresses.indexOf(destAddr);
           const el = response.rows[oi].elements[di];
           const mins = (el.status === 'OK' && el.duration)
             ? Math.ceil(el.duration.value / 60) : 15;
-          if (i !== -1 && j !== -1) matrix[i][j] = mins;
+          applyToMatrix(origAddr, destAddr, mins);
           newEntries.push({ origin: origAddr, destination: destAddr, minutes: mins });
         }
       }
@@ -2214,6 +2226,30 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
     </div>`);
   }
 
+  // 同一施設（同住所・移動0分で連続）の患者は、紙のスケジュール運用に合わせて
+  // 「左側の時間」をグループの代表時刻で統一し、実際の診察開始予定は名前の横に (HH:MM) で表示する
+  const patientVisits = result.visits.filter(v => v.type === 'patient');
+  const displayInfo = new Map();
+  for (let i = 0; i < patientVisits.length; i++) {
+    const v = patientVisits[i];
+    if (displayInfo.has(v)) continue;
+    const group = [v];
+    let j = i + 1;
+    while (j < patientVisits.length &&
+           patientVisits[j].patient.address &&
+           patientVisits[j].patient.address === v.patient.address &&
+           patientVisits[j].travel === 0) {
+      group.push(patientVisits[j]);
+      j++;
+    }
+    const groupTime = group[0].arrival;
+    let real = groupTime;
+    for (const gv of group) {
+      displayInfo.set(gv, { groupTime, realTime: real });
+      real += gv.duration;
+    }
+  }
+
   let pNum = 0;
   for (const v of result.visits) {
     if (v.type === 'lunch') {
@@ -2239,11 +2275,14 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
       ).join('') + softNotes.map(text =>
         `<div class="r-violation" style="background:#eef2ff;color:#4338ca">🔓 例外対応で成立: ${esc(text)}</div>`
       ).join('');
+      const info = displayInfo.get(v);
+      const realTimeHtml = info.realTime !== info.groupTime
+        ? ` <span class="r-realtime">(${minToTime(info.realTime)})</span>` : '';
       rows.push(`<div class="${rowClass}">
-        <div class="r-time">${minToTime(v.arrival)}</div>
+        <div class="r-time">${minToTime(info.groupTime)}</div>
         <div class="r-num">${pNum}</div>
         <div class="r-info">
-          <div class="r-name">${esc(v.patient.name)}${badgeIcon ? ` <span class="r-warn">${badgeIcon}</span>` : ''}</div>
+          <div class="r-name">${esc(v.patient.name)}${realTimeHtml}${badgeIcon ? ` <span class="r-warn">${badgeIcon}</span>` : ''}</div>
           <div class="r-meta">${condText}</div>
           <div class="r-stats">
             <span class="r-stat travel">🚗 ${v.travel}分</span>
