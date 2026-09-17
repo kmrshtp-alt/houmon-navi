@@ -1976,6 +1976,11 @@ async function approveDuration(externalId) {
   if (!p) return;
   const doctor = document.getElementById('dur-doctor-select').value;
   const now = new Date().toISOString();
+  // 画面表示中の値（未編集ならデフォルト25分）を実際に確定させてから承認する
+  const row = document.querySelector(`.dur-row[data-id="${CSS.escape(externalId)}"]`);
+  const displayedVal = row ? parseInt(row.querySelector('.dur-row-input').value) : null;
+  const dur = displayedVal || p.visit_duration_min || 25;
+  p.visit_duration_min = dur;
   p.visit_duration_confirmed_at = now;
   p.visit_duration_confirmed_by = doctor;
   const badge = document.getElementById(`dur-badge-${externalId}`);
@@ -1984,7 +1989,7 @@ async function approveDuration(externalId) {
   if (btn) { btn.disabled = true; btn.textContent = '承認済み'; }
   try {
     await db.from('scheduler_patients').update({
-      visit_duration_min: p.visit_duration_min,
+      visit_duration_min: dur,
       visit_duration_confirmed_at: now,
       visit_duration_confirmed_by: doctor
     }).eq('external_id', externalId);
