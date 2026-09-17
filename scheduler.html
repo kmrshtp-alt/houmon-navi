@@ -1968,6 +1968,10 @@ function updateDurationReviewValue(externalId, val) {
   const btn = document.getElementById(`dur-btn-${externalId}`);
   if (badge) { badge.textContent = '⏳ 未承認'; badge.className = 'dur-badge pending'; }
   if (btn) { btn.disabled = false; btn.textContent = 'この時間で承認'; }
+  const doctor = document.getElementById('dur-doctor-select').value;
+  const total = patients.filter(x => x.doctor === doctor).length;
+  const okCount = patients.filter(x => x.doctor === doctor && x.visit_duration_confirmed_at).length;
+  document.getElementById('dur-count').textContent = `${okCount}/${total} 承認済み`;
   scheduleDurationDefaultSave(externalId, n, true);
 }
 
