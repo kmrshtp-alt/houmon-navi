@@ -206,6 +206,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
 .r-viol-warn{color:#92400e;background:#fef3c7}
 .error-box{background:#fee2e2;border-left:4px solid #dc2626;padding:12px 14px;border-radius:6px;margin-top:14px;font-size:13px;color:#7f1d1d}
 
+.gmap-embed{width:100%;height:360px;border:0;border-radius:12px;margin-top:14px;display:block}
 .gmap-btn{display:block;width:100%;margin-top:14px;padding:14px;background:#1e3d6e;color:white;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
 .gmap-btn:hover{background:#172f55}
 
@@ -351,6 +352,7 @@ mark{background:#fef08a;color:inherit;padding:0 2px;border-radius:2px}
     <div class="card-header">最適化結果</div>
     <div class="card-body">
       <div id="result-body"></div>
+      <iframe id="gmap-embed" class="gmap-embed" style="display:none" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
       <a class="gmap-btn" id="gmap-btn" href="#" target="_blank">📱 Google マップで経路を開く</a>
     </div>
   </div>
@@ -403,6 +405,8 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* ── Google Maps API（JS SDK 経由 → CORS 不要） ── */
 // DistanceMatrixService を使うので REST fetch は行わない
+// Maps Embed API は完全無料（課金対象外）のため経路のその場描画に使用
+const GOOGLE_MAPS_EMBED_KEY = 'AIzaSyDKGEs4WvR-11UiTcngvfkpnveijDGYvGs';
 
 /* ── 定数 ── */
 const CLINIC = {
@@ -2352,17 +2356,26 @@ function renderResult(result, locations, dateStr, dayName, overrides = {}) {
 
   body.innerHTML = rows.join('') + summary + warnings;
 
-  // Google Maps URL
+  // Google Maps URL（ナビアプリを開く用リンク・無料）
   const orderedPatients = result.visits.filter(v => v.type === 'patient').map(v => v.patient);
   const fullList = [CLINIC, ...orderedPatients];
   if (cfg.returnClinic) fullList.push(CLINIC);
   if (fullList.length >= 2) {
     const origin = encodeURIComponent(getActiveAddress(fullList[0]) || fullList[0].address);
     const destination = encodeURIComponent(getActiveAddress(fullList[fullList.length - 1]) || fullList[fullList.length - 1].address);
-    const waypoints = fullList.slice(1, -1).map(p => encodeURIComponent(getActiveAddress(p) || p.address)).join('|');
+    const waypointAddrs = fullList.slice(1, -1).map(p => getActiveAddress(p) || p.address);
+    const waypoints = waypointAddrs.map(encodeURIComponent).join('|');
     let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
     if (waypoints) url += `&waypoints=${waypoints}`;
     document.getElementById('gmap-btn').href = url;
+
+    // Maps Embed API（無料・課金なし）で経路をその場に描画
+    const embed = document.getElementById('gmap-embed');
+    let embedUrl = `https://www.google.com/maps/embed/v1/directions?key=${GOOGLE_MAPS_EMBED_KEY}` +
+      `&origin=${origin}&destination=${destination}&mode=driving`;
+    if (waypoints) embedUrl += `&waypoints=${waypoints}`;
+    embed.src = embedUrl;
+    embed.style.display = 'block';
   }
 
   card.style.display = 'block';
