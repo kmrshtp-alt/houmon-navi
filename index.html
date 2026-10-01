@@ -1583,14 +1583,14 @@ function renderTodayList() {
   if (fullList.length === 0) { card.style.display = 'none'; btnArea.innerHTML = ''; return; }
   card.style.display = 'block';
 
-  if (fullList.length > 12) {
+  if (fullList.length > 11) {
     btnArea.innerHTML = `
       <div style="font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;margin-bottom:8px;text-align:center;">
-        ⚠️ Google Maps は1画面12件まで。前半・後半に分けて開いてください。
+        ⚠️ Google Maps のルート案内は経由地9件（合計11件）までのため、前半・後半に分けて開いてください。
       </div>
       <div style="display:flex;gap:8px;">
         <button class="calc-btn" style="flex:1;font-size:13px;" onclick="openFullRoute(0)">🗺️ 前半（1〜11件目）</button>
-        <button class="calc-btn" style="flex:1;font-size:13px;" onclick="openFullRoute(1)">🗺️ 後半（11〜${fullList.length - (clinicStart?1:0)}件目）</button>
+        <button class="calc-btn" style="flex:1;font-size:13px;" onclick="openFullRoute(1)">🗺️ 後半（11〜${fullList.length}件目）</button>
       </div>`;
   } else {
     btnArea.innerHTML = `<button class="calc-btn" ${fullList.length < 2 ? 'disabled' : ''} onclick="openFullRoute()">🗺️ Google Maps で全行程を開く</button>`;
@@ -1658,8 +1658,17 @@ function setupDragReorder() {
 
 /* ── 全行程 Google Maps ── */
 function openFullRoute(segment) {
-  const fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
+  let fullList = clinicStart ? [CLINIC_ENTRY, ...todayList] : todayList;
   if (fullList.length < 2) return;
+
+  // 住所が未登録の患者が混ざっていると、Google Maps の経路URLに空の経由地が
+  // 入り込み、その患者が地図上から静かに消えたり経路が崩れたりする原因になる
+  const missing = fullList.filter(p => !getActiveAddress(p) || !getActiveAddress(p).trim());
+  if (missing.length) {
+    alert(`住所未登録のため経路に追加できません:\n${missing.map(p => '・' + p.name).join('\n')}\n\n先に患者情報で住所を登録してください。`);
+    fullList = fullList.filter(p => getActiveAddress(p) && getActiveAddress(p).trim());
+    if (fullList.length < 2) return;
+  }
 
   function buildMapsUrl(stops) {
     const origin      = encodeURIComponent(getActiveAddress(stops[0]));
@@ -1670,12 +1679,14 @@ function openFullRoute(segment) {
     return url;
   }
 
-  if (fullList.length <= 12 || segment === undefined) {
+  // Google Maps のルート案内は経由地が最大9件（＝合計11地点）まで。
+  // これを超えると経由地が無視されたり、画面側の想定と違う着地点になったりする。
+  if (fullList.length <= 11 || segment === undefined) {
     window.open(buildMapsUrl(fullList), '_blank');
   } else if (segment === 0) {
-    window.open(buildMapsUrl(fullList.slice(0, 12)), '_blank');   // 1〜11件目
+    window.open(buildMapsUrl(fullList.slice(0, 11)), '_blank');   // 1〜11件目
   } else {
-    window.open(buildMapsUrl(fullList.slice(11)), '_blank');      // 11件目〜末尾
+    window.open(buildMapsUrl(fullList.slice(10)), '_blank');      // 11件目〜末尾
   }
 }
 
