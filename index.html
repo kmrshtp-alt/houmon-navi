@@ -1064,30 +1064,38 @@ function normFac(s) {
   return toHira((s || '').normalize('NFKC')).toLowerCase().replace(/[\s　]/g, '');
 }
 
-function matchFacility(p, q) {
-  if (!p.facility) return false;
-  const nq = normFac(q);
-  return nq.length > 0 && normFac(p.facility).includes(nq);
+/* 施設を1件の訪問先として扱う（同じ施設の入居者は住所が同じなので、人ごとには並べない） */
+function getFacilities() {
+  const byName = new Map();
+  for (const p of patients) {
+    if (!p.facility || !p.address) continue;
+    if (!byName.has(p.facility)) byName.set(p.facility, []);
+    byName.get(p.facility).push(p);
+  }
+  return [...byName.entries()].map(([name, list]) => {
+    const count = new Map();
+    list.forEach(p => count.set(p.address, (count.get(p.address) || 0) + 1));
+    const address = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    return { id: 'f_' + name, name, furigana: '', address, isFacility: true, residents: list.length };
+  });
 }
 
 function matchQ(p, q) {
+  if (p.isFacility) {
+    const nq = normFac(q);
+    return nq.length > 0 && normFac(p.name).includes(nq);
+  }
   const norm  = s => toHira(s).replace(/[\s　]/g, '');
   const nq    = norm(q);
   return p.name.replace(/[\s　]/g, '').includes(q.replace(/[\s　]/g, '')) ||
          norm(p.furigana || '').startsWith(nq) ||
-         norm(p.furigana || '').includes(nq) ||
-         matchFacility(p, q);
+         norm(p.furigana || '').includes(nq);
 }
 
-/* 施設名で検索したときは、同じ施設の入居者が全員候補に出るよう上限を広げる */
-function suggestLimit(q) {
-  return patients.some(p => matchFacility(p, q)) ? 30 : 8;
-}
-
-function facilityLineHTML(p, q) {
+/* 患者名の行の下に出す施設名（患者名で検索したときの参考表示） */
+function facilityLineHTML(p) {
   if (!p.facility) return '';
-  const hi = esc(p.facility).replace(esc(q), m => `<mark>${m}</mark>`);
-  return `<div class="s-fac">🏢 ${hi}</div>`;
+  return `<div class="s-fac">🏢 ${esc(p.facility)}</div>`;
 }
 
 function setupAutocomplete(slot) {
@@ -1101,9 +1109,10 @@ function setupAutocomplete(slot) {
     const q = input.value.trim();
     if (!q) { sugList.style.display = 'none'; return; }
 
+    const facilityHits = getFacilities().filter(p => matchQ(p, q));
     const patientHits  = patients.filter(p => matchQ(p, q));
     const hospitalHits = HOSPITALS.filter(p => matchQ(p, q));
-    const hits = [...patientHits, ...hospitalHits].slice(0, suggestLimit(q));
+    const hits = [...facilityHits, ...patientHits, ...hospitalHits].slice(0, 8);
     if (hits.length === 0) {
       sugList.innerHTML = '<div class="suggest-empty">該当なし</div>';
       sugList.style.display = 'block';
@@ -1116,15 +1125,17 @@ function setupAutocomplete(slot) {
       const hiName = esc(p.name).replace(esc(input.value.trim()), m => `<mark>${m}</mark>`);
       const hiFuri = hira ? esc(hira).replace(esc(hq), m => `<mark>${m}</mark>`) : '';
       const isHosp = p.id.startsWith('h_');
+      const mark = p.isFacility ? ' <span style="font-size:10px;color:#1e3d6e">🏢 施設</span>'
+                 : isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : '';
       return `<div class="suggest-item" data-id="${p.id}">
-        <div class="s-name">${hiName}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div>
+        <div class="s-name">${hiName}${mark}</div>
         ${hiFuri ? `<div class="s-furi">${hiFuri}</div>` : ''}
-        ${facilityLineHTML(p, input.value.trim())}
-        <div class="s-addr">${esc(p.address)}</div>
+        ${facilityLineHTML(p)}
+        <div class="s-addr">${p.isFacility ? `入居者${p.residents}人 ／ ` : ''}${esc(p.address)}</div>
       </div>`;
     }).join('');
 
-    const allCandidates = [...patients, ...HOSPITALS];
+    const allCandidates = [...getFacilities(), ...patients, ...HOSPITALS];
     sugList.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('mousedown', e => {
         e.preventDefault();
@@ -1526,13 +1537,15 @@ function setupTodayAutocomplete() {
     idx = -1;
     const q = input.value.trim();
     if (!q) { sug.style.display = 'none'; return; }
-    const allCandidates = [...patients, ...HOSPITALS];
-    const hits = allCandidates.filter(p => matchQ(p, q)).slice(0, suggestLimit(q));
+    const allCandidates = [...getFacilities(), ...patients, ...HOSPITALS];
+    const hits = allCandidates.filter(p => matchQ(p, q)).slice(0, 8);
     if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
       const isHosp = p.id.startsWith('h_');
-      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div>${facilityLineHTML(p, q)}<div class="s-addr">${esc(p.address)}</div></div>`;
+      const mark = p.isFacility ? ' <span style="font-size:10px;color:#1e3d6e">🏢 施設</span>'
+                 : isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : '';
+      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}${mark}</div>${facilityLineHTML(p)}<div class="s-addr">${p.isFacility ? `入居者${p.residents}人 ／ ` : ''}${esc(p.address)}</div></div>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('touchstart', e => {
@@ -1641,7 +1654,7 @@ function renderTodayList() {
       ${reorder}
       <div class="visit-num ${isClinicColor ? 'clinic' : ''}">${i + 1}</div>
       <div class="visit-info">
-        <div class="visit-name">${esc(p.name)}${p.facility ? ` <span style="font-size:11px;color:#1e3d6e;font-weight:600">🏢 ${esc(p.facility)}</span>` : ''}</div>
+        <div class="visit-name">${p.isFacility ? '🏢 ' : ''}${esc(p.name)}${p.facility ?` <span style="font-size:11px;color:#1e3d6e;font-weight:600">🏢 ${esc(p.facility)}</span>` : ''}</div>
         <div class="visit-addr">${esc(getActiveAddress(p))}${addrToggleHTML(p, 'today')}</div>
       </div>
       ${isFixed ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
