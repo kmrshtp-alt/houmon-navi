@@ -941,7 +941,12 @@ input[type="text"]:focus { border-color: #1e3d6e; background: white; }
               <label>住所</label>
               <input type="text" id="new-addr" placeholder="例：福岡市早良区..." autocomplete="off">
             </div>
+            <div class="fg" style="flex:1.5">
+              <label>施設名（任意）</label>
+              <input type="text" id="new-fac" list="fac-list" placeholder="例：すまいるホーム" autocomplete="off">
+            </div>
             <button class="add-btn" id="add-btn" onclick="addPatient()">＋ 追加</button>
+            <datalist id="fac-list"></datalist>
           </div>
         </div>
       </div>
@@ -1004,12 +1009,13 @@ async function addPatient() {
   const furiSei  = document.getElementById('new-furi-sei').value.trim();
   const furiMei  = document.getElementById('new-furi-mei').value.trim();
   const furigana = [furiSei, furiMei].filter(Boolean).join(' ');
+  const facility = document.getElementById('new-fac').value.trim() || null;
   const btn = document.getElementById('add-btn');
   btn.disabled = true; btn.textContent = '追加中...';
-  const { error } = await db.from('patients').insert({ name, address: addr, furigana });
+  const { error } = await db.from('patients').insert({ name, address: addr, furigana, facility });
   btn.disabled = false; btn.textContent = '＋ 追加';
   if (error) { alert('追加に失敗しました\n' + error.message); return; }
-  ['new-sei','new-mei','new-furi-sei','new-furi-mei','new-addr'].forEach(id =>
+  ['new-sei','new-mei','new-furi-sei','new-furi-mei','new-addr','new-fac'].forEach(id =>
     document.getElementById(id).value = '');
   await load();
 }
@@ -1250,6 +1256,9 @@ function renderList() {
   const list = document.getElementById('patient-list');
   const countEl = document.getElementById('patient-count');
   if (countEl) countEl.textContent = patients.length;
+  // 施設名の入力候補（表記ゆれで同じ施設が別扱いにならないように）
+  const facList = document.getElementById('fac-list');
+  if (facList) facList.innerHTML = getFacilities().map(f => `<option value="${esc(f.name)}"></option>`).join('');
   if (patients.length === 0) {
     list.innerHTML = '<div class="empty-msg">まだ患者が登録されていません</div>';
     return;
@@ -1316,6 +1325,7 @@ function showEditModal(id) {
       <div><span class="modal-label">ふりがな（名）</span><input id="e-fmei" style="${inp}" value="${esc(furiMei||'')}"></div>
     </div>
     <div class="modal-full"><span class="modal-label">住所</span><input id="e-addr" style="${inp}" value="${esc(p.address)}"></div>
+    <div class="modal-full"><span class="modal-label">施設名（任意）</span><input id="e-fac" list="fac-list" style="${inp}" placeholder="施設の入居者のみ入力" value="${esc(p.facility||'')}"></div>
     <div class="modal-full" id="e-addr2-block" style="${p.address2 ? '' : 'display:none'}">
       <span class="modal-label">一時滞在先（任意）</span>
       <input id="e-addr2-label" style="${inp};margin-bottom:6px" placeholder="例：ショートステイ先、入院先" value="${esc(p.address2_label||'')}">
@@ -1336,6 +1346,7 @@ async function saveEdit(id) {
   const fsei = document.getElementById('e-fsei').value.trim();
   const fmei = document.getElementById('e-fmei').value.trim();
   const addr = document.getElementById('e-addr').value.trim();
+  const facility = document.getElementById('e-fac').value.trim();
   const addr2 = document.getElementById('e-addr2') ? document.getElementById('e-addr2').value.trim() : '';
   const addr2Label = document.getElementById('e-addr2-label') ? document.getElementById('e-addr2-label').value.trim() : '';
   if (!sei || !addr) { alert('姓と住所は必須です'); return; }
@@ -1344,6 +1355,7 @@ async function saveEdit(id) {
   document.getElementById('modal-overlay').style.display = 'none';
   await db.from('patients').update({
     name, furigana, address: addr, lat: null, lng: null,
+    facility: facility || null,
     address2: addr2 || null,
     address2_label: addr2 ? (addr2Label || '一時滞在先') : null,
   }).eq('id', id);
@@ -1471,12 +1483,12 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-[['new-sei','new-mei'],['new-mei','new-furi-sei'],['new-furi-sei','new-furi-mei'],['new-furi-mei','new-addr']].forEach(([from,to]) => {
+[['new-sei','new-mei'],['new-mei','new-furi-sei'],['new-furi-sei','new-furi-mei'],['new-furi-mei','new-addr'],['new-addr','new-fac']].forEach(([from,to]) => {
   document.getElementById(from).addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById(to).focus();
   });
 });
-document.getElementById('new-addr').addEventListener('keydown', e => {
+document.getElementById('new-fac').addEventListener('keydown', e => {
   if (e.key === 'Enter') addPatient();
 });
 
