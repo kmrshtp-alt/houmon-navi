@@ -1086,6 +1086,13 @@ function getFacilities() {
   });
 }
 
+/* 一時滞在先（ショートステイ・看多機の泊まり等）の名前で一致するか */
+function matchStayLabel(p, q) {
+  if (!p.address2 || !p.address2_label) return false;
+  const nq = normFac(q);
+  return nq.length > 0 && normFac(p.address2_label).includes(nq);
+}
+
 function matchQ(p, q) {
   if (p.isFacility) {
     const nq = normFac(q);
@@ -1095,13 +1102,24 @@ function matchQ(p, q) {
   const nq    = norm(q);
   return p.name.replace(/[\s　]/g, '').includes(q.replace(/[\s　]/g, '')) ||
          norm(p.furigana || '').startsWith(nq) ||
-         norm(p.furigana || '').includes(nq);
+         norm(p.furigana || '').includes(nq) ||
+         matchStayLabel(p, q);
+}
+
+/* 一時滞在先の名前で見つけた患者は、自動で一時滞在先の住所を選ぶ（名前で探した場合は自宅のまま） */
+function preferStayAddress(p, q) {
+  if (!p || p.isFacility || !p.address2) return;
+  const strip = s => toHira(s || '').replace(/[\s　]/g, '');
+  const byName = strip(p.name).includes(strip(q)) || strip(p.furigana).includes(strip(q));
+  if (!byName && matchStayLabel(p, q)) addrToggleState[p.id] = 'secondary';
 }
 
 /* 患者名の行の下に出す施設名（患者名で検索したときの参考表示） */
 function facilityLineHTML(p) {
-  if (!p.facility) return '';
-  return `<div class="s-fac">🏢 ${esc(p.facility)}</div>`;
+  let html = '';
+  if (p.facility) html += `<div class="s-fac">🏢 ${esc(p.facility)}</div>`;
+  if (p.address2) html += `<div class="s-fac" style="color:#b45309">🏥 一時滞在先：${esc(p.address2_label || p.address2)}</div>`;
+  return html;
 }
 
 function setupAutocomplete(slot) {
@@ -1146,7 +1164,7 @@ function setupAutocomplete(slot) {
       el.addEventListener('mousedown', e => {
         e.preventDefault();
         const p = allCandidates.find(x => x.id === el.dataset.id);
-        if (p) selectPatient(slot, p);
+        if (p) { preferStayAddress(p, input.value.trim()); selectPatient(slot, p); }
       });
     });
 
@@ -1568,7 +1586,7 @@ function setupTodayAutocomplete() {
         e.preventDefault();
         const p = allCandidates.find(x => x.id === el.dataset.id);
         input.focus();
-        if (p) addToToday(p);
+        if (p) { preferStayAddress(p, input.value.trim()); addToToday(p); }
         input.value = '';
         sug.style.display = 'none';
         selecting = false;
@@ -1580,7 +1598,7 @@ function setupTodayAutocomplete() {
       el.addEventListener('click', () => {
         const p = allCandidates.find(x => x.id === el.dataset.id);
         input.focus();
-        if (p) addToToday(p);
+        if (p) { preferStayAddress(p, input.value.trim()); addToToday(p); }
         input.value = '';
         sug.style.display = 'none';
         selecting = false;
