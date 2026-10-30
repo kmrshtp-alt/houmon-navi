@@ -261,6 +261,8 @@ main { flex: 1; overflow: hidden; display: flex; }
 .s-name mark { background: #fef08a; color: #1e293b; border-radius: 2px; padding: 0 1px; }
 .s-furi { font-size: 11px; color: #94a3b8; margin-top: 1px; }
 .s-addr { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-fac { font-size: 11px; color: #1e3d6e; font-weight: 700; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-fac mark { background: #fef08a; color: #1e3d6e; border-radius: 2px; padding: 0 1px; }
 .suggest-empty { padding: 14px 16px; font-size: 13px; color: #94a3b8; text-align: center; }
 
 /* Clinic button */
@@ -1057,12 +1059,35 @@ function toHira(s) {
   return (s || '').replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
 }
 
+/* 施設名検索用の正規化：全角/半角・大小文字・カタカナ/ひらがなの違いを吸収 */
+function normFac(s) {
+  return toHira((s || '').normalize('NFKC')).toLowerCase().replace(/[\s　]/g, '');
+}
+
+function matchFacility(p, q) {
+  if (!p.facility) return false;
+  const nq = normFac(q);
+  return nq.length > 0 && normFac(p.facility).includes(nq);
+}
+
 function matchQ(p, q) {
   const norm  = s => toHira(s).replace(/[\s　]/g, '');
   const nq    = norm(q);
   return p.name.replace(/[\s　]/g, '').includes(q.replace(/[\s　]/g, '')) ||
          norm(p.furigana || '').startsWith(nq) ||
-         norm(p.furigana || '').includes(nq);
+         norm(p.furigana || '').includes(nq) ||
+         matchFacility(p, q);
+}
+
+/* 施設名で検索したときは、同じ施設の入居者が全員候補に出るよう上限を広げる */
+function suggestLimit(q) {
+  return patients.some(p => matchFacility(p, q)) ? 30 : 8;
+}
+
+function facilityLineHTML(p, q) {
+  if (!p.facility) return '';
+  const hi = esc(p.facility).replace(esc(q), m => `<mark>${m}</mark>`);
+  return `<div class="s-fac">🏢 ${hi}</div>`;
 }
 
 function setupAutocomplete(slot) {
@@ -1078,7 +1103,7 @@ function setupAutocomplete(slot) {
 
     const patientHits  = patients.filter(p => matchQ(p, q));
     const hospitalHits = HOSPITALS.filter(p => matchQ(p, q));
-    const hits = [...patientHits, ...hospitalHits].slice(0, 8);
+    const hits = [...patientHits, ...hospitalHits].slice(0, suggestLimit(q));
     if (hits.length === 0) {
       sugList.innerHTML = '<div class="suggest-empty">該当なし</div>';
       sugList.style.display = 'block';
@@ -1094,6 +1119,7 @@ function setupAutocomplete(slot) {
       return `<div class="suggest-item" data-id="${p.id}">
         <div class="s-name">${hiName}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div>
         ${hiFuri ? `<div class="s-furi">${hiFuri}</div>` : ''}
+        ${facilityLineHTML(p, input.value.trim())}
         <div class="s-addr">${esc(p.address)}</div>
       </div>`;
     }).join('');
@@ -1221,7 +1247,7 @@ function renderList() {
     (a.furigana || a.name).localeCompare(b.furigana || b.name, 'ja'));
   list.innerHTML = sorted.map(p => `
     <div class="tbl-row">
-      <div class="tbl-name">${esc(p.name)}${p.address2 ? ' <span style="font-size:10px;color:#1e3d6e;background:#edf2fa;border-radius:4px;padding:1px 5px">2住所</span>' : ''}<div style="font-size:11px;color:#94a3b8">${esc(p.furigana||'')}</div></div>
+      <div class="tbl-name">${esc(p.name)}${p.address2 ? ' <span style="font-size:10px;color:#1e3d6e;background:#edf2fa;border-radius:4px;padding:1px 5px">2住所</span>' : ''}<div style="font-size:11px;color:#94a3b8">${esc(p.furigana||'')}</div>${p.facility ? `<div style="font-size:11px;color:#1e3d6e;font-weight:600">🏢 ${esc(p.facility)}</div>` : ''}</div>
       <div class="tbl-addr">${esc(p.address)}</div>
       <div style="display:flex;gap:4px;justify-content:flex-end">
         <button class="edit-btn" data-id="${p.id}">編集</button>
@@ -1501,12 +1527,12 @@ function setupTodayAutocomplete() {
     const q = input.value.trim();
     if (!q) { sug.style.display = 'none'; return; }
     const allCandidates = [...patients, ...HOSPITALS];
-    const hits = allCandidates.filter(p => matchQ(p, q)).slice(0, 8);
+    const hits = allCandidates.filter(p => matchQ(p, q)).slice(0, suggestLimit(q));
     if (!hits.length) { sug.innerHTML = '<div class="suggest-empty">該当なし</div>'; sug.style.display = 'block'; return; }
     sug.innerHTML = hits.map(p => {
       const hi = esc(p.name).replace(esc(q), m => `<mark>${m}</mark>`);
       const isHosp = p.id.startsWith('h_');
-      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div><div class="s-addr">${esc(p.address)}</div></div>`;
+      return `<div class="suggest-item" data-id="${p.id}"><div class="s-name">${hi}${isHosp ? ' <span style="font-size:10px;color:#94a3b8">🏥</span>' : ''}</div>${facilityLineHTML(p, q)}<div class="s-addr">${esc(p.address)}</div></div>`;
     }).join('');
     sug.querySelectorAll('.suggest-item').forEach(el => {
       el.addEventListener('touchstart', e => {
@@ -1615,7 +1641,7 @@ function renderTodayList() {
       ${reorder}
       <div class="visit-num ${isClinicColor ? 'clinic' : ''}">${i + 1}</div>
       <div class="visit-info">
-        <div class="visit-name">${esc(p.name)}</div>
+        <div class="visit-name">${esc(p.name)}${p.facility ? ` <span style="font-size:11px;color:#1e3d6e;font-weight:600">🏢 ${esc(p.facility)}</span>` : ''}</div>
         <div class="visit-addr">${esc(getActiveAddress(p))}${addrToggleHTML(p, 'today')}</div>
       </div>
       ${isFixed ? '' : `<button class="visit-del" onclick="removeFromToday(${tidx})">✕</button>`}
